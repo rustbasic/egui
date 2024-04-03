@@ -714,7 +714,7 @@ impl GlowWinitRunning {
         #[cfg(feature = "__screenshot")]
         if integration.egui_ctx.frame_nr() == 2 {
             if let Ok(path) = std::env::var("EFRAME_SCREENSHOT_TO") {
-                save_screeshot_and_exit(&path, &painter, screen_size_in_pixels);
+                save_screenshot_and_exit(&path, &painter, screen_size_in_pixels);
             }
         }
 
@@ -849,10 +849,17 @@ fn change_gl_context(
 ) {
     crate::profile_function!();
 
-    if let Some(current_gl_context) = current_gl_context {
-        crate::profile_scope!("is_current");
-        if gl_surface.is_current(current_gl_context) {
-            return; // Early-out to save a lot of time.
+    if !cfg!(target_os = "windows") {
+        // According to https://github.com/emilk/egui/issues/4289
+        // we cannot do this early-out on Windows.
+        // TODO(emilk): optimize context switching on Windows too.
+        // See https://github.com/emilk/egui/issues/4173
+
+        if let Some(current_gl_context) = current_gl_context {
+            crate::profile_scope!("is_current");
+            if gl_surface.is_current(current_gl_context) {
+                return; // Early-out to save a lot of time.
+            }
         }
     }
 
@@ -1491,7 +1498,7 @@ fn render_immediate_viewport(
 }
 
 #[cfg(feature = "__screenshot")]
-fn save_screeshot_and_exit(
+fn save_screenshot_and_exit(
     path: &str,
     painter: &egui_glow::Painter,
     screen_size_in_pixels: [u32; 2],
