@@ -168,8 +168,10 @@ impl GlowWinitApp {
 
         {
             let viewport = &glutin_window_context.viewports[&ViewportId::ROOT];
-            let window = viewport.window.as_ref().unwrap(); // Can't fail - we just called `initialize_all_viewports`
-            epi_integration::apply_window_settings(window, window_settings);
+            // let window = viewport.window.as_ref().unwrap(); // Can't fail - we just called `initialize_all_viewports`
+            if let Some(window) = viewport.window.as_ref() {
+                epi_integration::apply_window_settings(window, window_settings);
+            };
         }
 
         crate::profile_scope!("glow::Context::from_loader_function");
@@ -268,6 +270,18 @@ impl GlowWinitApp {
         #[cfg(feature = "accesskit")]
         {
             let event_loop_proxy = self.repaint_proxy.lock().clone();
+            if let Some(viewport) = glutin.viewports.get_mut(&ViewportId::ROOT) {
+                if let Viewport {
+                    window: Some(window),
+                    egui_winit: Some(egui_winit),
+                    ..
+                } = viewport
+                {
+                    integration.init_accesskit(egui_winit, window, event_loop_proxy);
+                }
+            };
+            /*
+            let event_loop_proxy = self.repaint_proxy.lock().clone();
             let viewport = glutin.viewports.get_mut(&ViewportId::ROOT).unwrap(); // we always have a root
             if let Viewport {
                 window: Some(window),
@@ -277,6 +291,7 @@ impl GlowWinitApp {
             {
                 integration.init_accesskit(egui_winit, window, event_loop_proxy);
             }
+            */
         }
 
         let theme = system_theme.unwrap_or(self.native_options.default_theme);
@@ -333,6 +348,18 @@ impl GlowWinitApp {
                     // SAFETY: the event loop lives longer than
                     // the Rc:s we just upgraded above.
                     #[allow(unsafe_code)]
+                    if let Some(event_loop) = unsafe { event_loop.as_ref() } {
+                        render_immediate_viewport(
+                            event_loop,
+                            egui_ctx,
+                            &glutin,
+                            &painter,
+                            beginning,
+                            immediate_viewport,
+                        );
+                    };
+                    /*
+                    #[allow(unsafe_code)]
                     let event_loop = unsafe { event_loop.as_ref().unwrap() };
 
                     render_immediate_viewport(
@@ -343,6 +370,7 @@ impl GlowWinitApp {
                         beginning,
                         immediate_viewport,
                     );
+                    */
                 } else {
                     log::warn!("render_sync_callback called after window closed");
                 }
@@ -1156,11 +1184,13 @@ impl GlutinWindowContext {
                 if let Some(not_current_context) = self.not_current_gl_context.take() {
                     not_current_context
                 } else {
-                    self.current_gl_context
-                        .take()
-                        .unwrap()
-                        .make_not_current()
-                        .unwrap()
+                    let Some(current_gl) = self.current_gl_context.take() else {
+                        return Ok(());
+                    };
+                    let Ok(not_current) = current_gl.make_not_current() else {
+                        return Ok(());
+                    };
+                    not_current
                 };
             let current_gl_context = not_current_gl_context.make_current(&gl_surface)?;
 
@@ -1502,7 +1532,10 @@ fn render_immediate_viewport(
 
     change_gl_context(current_gl_context, gl_surface);
 
-    let current_gl_context = current_gl_context.as_ref().unwrap();
+    // let current_gl_context = current_gl_context.as_ref().unwrap();
+    let Some(current_gl_context) = current_gl_context.as_ref() else {
+        return;
+    };
 
     if !gl_surface.is_current(current_gl_context) {
         log::error!(
