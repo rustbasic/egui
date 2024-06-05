@@ -490,7 +490,7 @@ impl<'open> Window<'open> {
             + vec2(0.0, title_bar_height);
         resize.margins = margins;
 
-        resize.is_manually = true;
+        let resize = resize.resizable(false); // We resize it manually
         let mut resize = resize.id(resize_id);
 
         if let Some(mut resize_state) = resize::State::load(ctx, resize_id) {
