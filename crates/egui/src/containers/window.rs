@@ -497,10 +497,12 @@ impl<'open> Window<'open> {
         let resize = resize.resizable(false); // We resize it manually
         let mut resize = resize.id(resize_id);
 
+        /*
         if let Some(mut resize_state) = resize::State::load(ctx, resize_id) {
             resize_state.desired_size = Vec2::ZERO;
             resize_state.store(ctx, resize_id);
         }
+        */
 
         let mut prepared_area = area.begin(ctx);
         let last_frame_outer_rect = prepared_area.state().rect();
