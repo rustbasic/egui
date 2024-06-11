@@ -835,25 +835,29 @@ impl State {
                 window.set_ime_allowed(self.allow_ime);
             }
 
-            let pixels_per_point = pixels_per_point(&self.egui_ctx, window);
-            let ime_rect_px = ime.cursor_rect * pixels_per_point;
+            if ime.ime_enabled {
+                let pixels_per_point = pixels_per_point(&self.egui_ctx, window);
+                let ime_rect_px = ime.cursor_rect * pixels_per_point;
 
-            let is_need_cursor_area = self.ime_rect_px != Some(ime_rect_px)
-                && self.egui_ctx.input(|i| !i.events.is_empty());
+                let is_need_cursor_area = self.ime_rect_px != Some(ime_rect_px)
+                    && self.egui_ctx.input(|i| !i.events.is_empty());
 
-            if ime.visible && is_need_cursor_area {
-                self.ime_rect_px = Some(ime_rect_px);
-                crate::profile_scope!("set_ime_cursor_area");
-                window.set_ime_cursor_area(
-                    winit::dpi::PhysicalPosition {
-                        x: ime_rect_px.min.x,
-                        y: ime_rect_px.min.y,
-                    },
-                    winit::dpi::PhysicalSize {
-                        width: ime_rect_px.width(),
-                        height: ime_rect_px.height(),
-                    },
-                );
+                if ime.visible && is_need_cursor_area {
+                    self.ime_rect_px = Some(ime_rect_px);
+                    crate::profile_scope!("set_ime_cursor_area");
+                    window.set_ime_cursor_area(
+                        winit::dpi::PhysicalPosition {
+                            x: ime_rect_px.min.x,
+                            y: ime_rect_px.min.y,
+                        },
+                        winit::dpi::PhysicalSize {
+                            width: ime_rect_px.width(),
+                            height: ime_rect_px.height(),
+                        },
+                    );
+                } else {
+                    self.ime_rect_px = None;
+                }
             } else {
                 self.ime_rect_px = None;
             }
