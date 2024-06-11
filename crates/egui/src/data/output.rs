@@ -76,6 +76,9 @@ pub struct IMEOutput {
     /// is allowed IME?
     pub allowed_ime: bool,
 
+    /// Indicates whether the IME is currently active.
+    pub ime_enabled: bool,
+
     /// Where the [`crate::TextEdit`] is located on screen.
     pub rect: crate::Rect,
 
