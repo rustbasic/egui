@@ -735,6 +735,7 @@ impl<'t> TextEdit<'t> {
                             o.ime = Some(crate::output::IMEOutput {
                                 visible: ui.visuals().text_cursor.ime_visible,
                                 allowed_ime: ui.visuals().text_cursor.ime_allowed,
+                                ime_enabled: state.ime_enabled,
                                 rect: transform * rect,
                                 cursor_rect: transform * ime_cursor_rect,
                             });
