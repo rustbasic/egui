@@ -521,13 +521,13 @@ impl<'t> TextEdit<'t> {
             }
         });
         let mut state = TextEditState::load(ui.ctx(), id).unwrap_or_default();
+        let mut has_focus = ui.memory(|mem| mem.has_focus(id));
 
         // On touch screens (e.g. mobile in `eframe` web), should
         // dragging select text, or scroll the enclosing [`ScrollArea`] (if any)?
         // Since currently copying selected text in not supported on `eframe` web,
         // we prioritize touch-scrolling:
-        let allow_drag_to_select =
-            ui.input(|i| !i.has_touch_screen()) || ui.memory(|mem| mem.has_focus(id));
+        let allow_drag_to_select = ui.input(|i| !i.has_touch_screen()) || has_focus;
 
         let sense = if interactive {
             if allow_drag_to_select {
@@ -575,6 +575,7 @@ impl<'t> TextEdit<'t> {
 
                 if did_interact {
                     ui.memory_mut(|mem| mem.request_focus(response.id));
+                    has_focus = true;
                 }
             }
         }
@@ -585,7 +586,7 @@ impl<'t> TextEdit<'t> {
 
         let mut cursor_range = None;
         let prev_cursor_range = state.cursor.range(&galley);
-        if interactive && ui.memory(|mem| mem.has_focus(id)) {
+        if interactive && has_focus {
             ui.memory_mut(|mem| mem.set_focus_lock_filter(id, event_filter));
 
             let default_cursor_range = if cursor_at_end {
@@ -624,7 +625,7 @@ impl<'t> TextEdit<'t> {
 
         // Visual clipping for singleline text editor with text larger than width
         if clip_text && align_offset == 0.0 {
-            let cursor_pos = match (cursor_range, ui.memory(|mem| mem.has_focus(id))) {
+            let cursor_pos = match (cursor_range, has_focus) {
                 (Some(cursor_range), true) => galley.pos_from_cursor(&cursor_range.primary).min.x,
                 _ => 0.0,
             };
@@ -682,7 +683,7 @@ impl<'t> TextEdit<'t> {
                 painter.galley(rect.min, galley, hint_text_color);
             }
 
-            if ui.memory(|mem| mem.has_focus(id)) {
+            if has_focus {
                 if let Some(cursor_range) = state.cursor.range(&galley) {
                     // We paint the cursor on top of the text, in case
                     // the text galley has backgrounds (as e.g. `code` snippets in markup do).
@@ -729,9 +730,13 @@ impl<'t> TextEdit<'t> {
                             .unwrap_or_default();
 
                         ui.ctx().output_mut(|o| {
+                            let mut ime_cursor_rect = primary_cursor_rect;
+                            ime_cursor_rect.max.x += primary_cursor_rect.height();
                             o.ime = Some(crate::output::IMEOutput {
+                                visible: ui.visuals().text_cursor.ime_visible,
+                                allowed_ime: ui.visuals().text_cursor.ime_allowed,
                                 rect: transform * rect,
-                                cursor_rect: transform * primary_cursor_rect,
+                                cursor_rect: transform * ime_cursor_rect,
                             });
                         });
                     }
