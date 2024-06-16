@@ -698,6 +698,18 @@ impl GlowWinitRunning {
             frame_timer.resume();
         }
 
+        let Some(current_gl_context) = current_gl_context.as_ref() else {
+            return EventResult::Wait;
+        };
+    
+        if !gl_surface.is_current(current_gl_context) {
+            log::error!(
+                "egui::run_ui_and_pant: viewport {:?} ({:?}) was not created on main thread.",
+                viewport.ids.this,
+                viewport.builder.title
+            );
+        }
+    
         let screen_size_in_pixels: [u32; 2] = window.inner_size().into();
         let clear_color = app.clear_color(&integration.egui_ctx.style().visuals);
 
@@ -756,9 +768,9 @@ impl GlowWinitRunning {
             frame_timer.pause();
             crate::profile_scope!("swap_buffers");
             if let Err(err) = gl_surface.swap_buffers(
-                current_gl_context
-                    .as_ref()
-                    .expect("failed to get current context to swap buffers"),
+                current_gl_context,
+                    // .as_ref()
+                    // .expect("failed to get current context to swap buffers"),
             ) {
                 log::error!("swap_buffers failed: {err}");
             }
