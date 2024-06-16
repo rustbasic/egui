@@ -1261,11 +1261,12 @@ impl GlutinWindowContext {
         if let Some(viewport) = self.viewports.get(&viewport_id) {
             if let Some(gl_surface) = &viewport.gl_surface {
                 change_gl_context(&mut self.current_gl_context, gl_surface);
+                let Some(current_gl_context) = self.current_gl_context.as_ref() else {
+                    return;
+                };
 
                 gl_surface.resize(
-                    self.current_gl_context
-                        .as_ref()
-                        .expect("failed to get current context to resize surface"),
+                    current_gl_context,
                     width_px,
                     height_px,
                 );
