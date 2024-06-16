@@ -689,8 +689,6 @@ impl GlowWinitRunning {
             return EventResult::Wait;
         };
 
-        egui_winit.handle_platform_output(window, platform_output);
-
         let clipped_primitives = integration.egui_ctx.tessellate(shapes, pixels_per_point);
 
         {
@@ -774,6 +772,8 @@ impl GlowWinitRunning {
                 save_screenshot_and_exit(&path, &painter, screen_size_in_pixels);
             }
         }
+
+        egui_winit.handle_platform_output(&window, platform_output);
 
         glutin.handle_viewport_output(event_loop, &integration.egui_ctx, &viewport_output);
 
@@ -885,21 +885,23 @@ fn change_gl_context(
 ) {
     crate::profile_function!();
 
-    let Some(p_current_gl_context) = current_gl_context.take() else {
-        return;
-    };
-
     if !cfg!(target_os = "windows") {
         // According to https://github.com/emilk/egui/issues/4289
         // we cannot do this early-out on Windows.
         // TODO(emilk): optimize context switching on Windows too.
         // See https://github.com/emilk/egui/issues/4173
 
-        crate::profile_scope!("is_current");
-        if gl_surface.is_current(&p_current_gl_context) {
-            return; // Early-out to save a lot of time.
+        if let Some(current_gl_context) = current_gl_context {
+            crate::profile_scope!("is_current");
+            if gl_surface.is_current(current_gl_context) {
+                return; // Early-out to save a lot of time.
+            }
         }
     }
+
+    let Some(p_current_gl_context) = current_gl_context.take() else {
+        return;
+    };
 
     crate::profile_scope!("make_not_current");
     let Ok(not_current) = p_current_gl_context.make_not_current() else {
@@ -1313,7 +1315,6 @@ impl GlutinWindowContext {
             if let Some(window) = &viewport.window {
                 let old_inner_size = window.inner_size();
 
-                let is_viewport_focused = self.focused_viewport == Some(viewport_id);
                 viewport.deferred_commands.append(&mut commands);
 
                 egui_winit::process_viewport_commands(
@@ -1321,7 +1322,6 @@ impl GlutinWindowContext {
                     &mut viewport.info,
                     std::mem::take(&mut viewport.deferred_commands),
                     window,
-                    is_viewport_focused,
                     &mut viewport.actions_requested,
                 );
 
