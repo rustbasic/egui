@@ -763,11 +763,7 @@ impl GlowWinitRunning {
             // vsync - don't count as frame-time:
             frame_timer.pause();
             crate::profile_scope!("swap_buffers");
-            if let Err(err) = gl_surface.swap_buffers(
-                current_gl_context,
-                    // .as_ref()
-                    // .expect("failed to get current context to swap buffers"),
-            ) {
+            if let Err(err) = gl_surface.swap_buffers(current_gl_context) {
                 log::error!("swap_buffers failed: {err}");
             }
             frame_timer.resume();
@@ -1265,11 +1261,7 @@ impl GlutinWindowContext {
                     return;
                 };
 
-                gl_surface.resize(
-                    current_gl_context,
-                    width_px,
-                    height_px,
-                );
+                gl_surface.resize(current_gl_context, width_px, height_px);
             }
         }
     }
