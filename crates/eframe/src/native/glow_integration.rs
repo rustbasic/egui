@@ -701,15 +701,7 @@ impl GlowWinitRunning {
         let Some(current_gl_context) = current_gl_context.as_ref() else {
             return EventResult::Wait;
         };
-    
-        if !gl_surface.is_current(current_gl_context) {
-            log::error!(
-                "egui::run_ui_and_pant: viewport {:?} ({:?}) was not created on main thread.",
-                viewport.ids.this,
-                viewport.builder.title
-            );
-        }
-    
+
         let screen_size_in_pixels: [u32; 2] = window.inner_size().into();
         let clear_color = app.clear_color(&integration.egui_ctx.style().visuals);
 
@@ -764,6 +756,10 @@ impl GlowWinitRunning {
         }
 
         {
+            // let Some(current_gl_context) = current_gl_context.as_ref() else {
+            //     return EventResult::Wait;
+            // };
+
             // vsync - don't count as frame-time:
             frame_timer.pause();
             crate::profile_scope!("swap_buffers");
