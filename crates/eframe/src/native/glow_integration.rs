@@ -698,10 +698,6 @@ impl GlowWinitRunning {
             frame_timer.resume();
         }
 
-        let Some(current_gl_context) = current_gl_context.as_ref() else {
-            return EventResult::Wait;
-        };
-
         let screen_size_in_pixels: [u32; 2] = window.inner_size().into();
         let clear_color = app.clear_color(&integration.egui_ctx.style().visuals);
 
@@ -756,9 +752,9 @@ impl GlowWinitRunning {
         }
 
         {
-            // let Some(current_gl_context) = current_gl_context.as_ref() else {
-            //     return EventResult::Wait;
-            // };
+            let Some(current_gl_context) = current_gl_context.as_ref() else {
+                return EventResult::Wait;
+            };
 
             // vsync - don't count as frame-time:
             frame_timer.pause();
@@ -1533,19 +1529,6 @@ fn render_immediate_viewport(
 
     change_gl_context(current_gl_context, gl_surface);
 
-    // let current_gl_context = current_gl_context.as_ref().unwrap();
-    let Some(current_gl_context) = current_gl_context.as_ref() else {
-        return;
-    };
-
-    if !gl_surface.is_current(current_gl_context) {
-        log::error!(
-            "egui::show_viewport_immediate: viewport {:?} ({:?}) was not created on main thread.",
-            viewport.ids.this,
-            viewport.builder.title
-        );
-    }
-
     let screen_size_in_pixels: [u32; 2] = window.inner_size().into();
 
     egui_glow::painter::clear(
@@ -1562,6 +1545,10 @@ fn render_immediate_viewport(
     );
 
     {
+        let Some(current_gl_context) = current_gl_context.as_ref() else {
+            return;
+        };
+
         crate::profile_scope!("swap_buffers");
         if let Err(err) = gl_surface.swap_buffers(current_gl_context) {
             log::error!("swap_buffers failed: {err}");
