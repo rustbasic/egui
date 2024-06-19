@@ -713,14 +713,14 @@ impl GlowWinitRunning {
         }
 
         {
+            let Some(current_gl_context) = current_gl_context.as_ref() else {
+                return EventResult::Wait;
+            };
+
             // vsync - don't count as frame-time:
             frame_timer.pause();
             crate::profile_scope!("swap_buffers");
-            if let Err(err) = gl_surface.swap_buffers(
-                current_gl_context
-                    .as_ref()
-                    .expect("failed to get current context to swap buffers"),
-            ) {
+            if let Err(err) = gl_surface.swap_buffers(current_gl_context) {
                 log::error!("swap_buffers failed: {err}");
             }
             frame_timer.resume();
@@ -879,17 +879,19 @@ fn change_gl_context(
         }
     }
 
-    let not_current = {
-        crate::profile_scope!("make_not_current");
-        current_gl_context
-            .take()
-            .unwrap()
-            .make_not_current()
-            .unwrap()
+    let Some(p_current_gl_context) = current_gl_context.take() else {
+        return;
+    };
+
+    crate::profile_scope!("make_not_current");
+    let Ok(not_current) = p_current_gl_context.make_not_current() else {
+        return;
     };
 
     crate::profile_scope!("make_current");
-    *current_gl_context = Some(not_current.make_current(gl_surface).unwrap());
+    if let Ok(current) = not_current.make_current(gl_surface) {
+        *current_gl_context = Some(current);
+    }
 }
 
 impl GlutinWindowContext {
@@ -1223,13 +1225,11 @@ impl GlutinWindowContext {
         if let Some(viewport) = self.viewports.get(&viewport_id) {
             if let Some(gl_surface) = &viewport.gl_surface {
                 change_gl_context(&mut self.current_gl_context, gl_surface);
-                gl_surface.resize(
-                    self.current_gl_context
-                        .as_ref()
-                        .expect("failed to get current context to resize surface"),
-                    width_px,
-                    height_px,
-                );
+                let Some(current_gl_context) = self.current_gl_context.as_ref() else {
+                    return;
+                };
+
+                gl_surface.resize(current_gl_context, width_px, height_px);
             }
         }
     }
@@ -1478,16 +1478,6 @@ fn render_immediate_viewport(
 
     change_gl_context(current_gl_context, gl_surface);
 
-    let current_gl_context = current_gl_context.as_ref().unwrap();
-
-    if !gl_surface.is_current(current_gl_context) {
-        log::error!(
-            "egui::show_viewport_immediate: viewport {:?} ({:?}) was not created on main thread.",
-            viewport.ids.this,
-            viewport.builder.title
-        );
-    }
-
     egui_glow::painter::clear(
         painter.borrow().gl(),
         screen_size_in_pixels,
@@ -1502,6 +1492,10 @@ fn render_immediate_viewport(
     );
 
     {
+        let Some(current_gl_context) = current_gl_context.as_ref() else {
+            return;
+        };
+
         crate::profile_scope!("swap_buffers");
         if let Err(err) = gl_surface.swap_buffers(current_gl_context) {
             log::error!("swap_buffers failed: {err}");
