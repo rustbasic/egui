@@ -173,7 +173,6 @@ impl GlowWinitApp {
             if let Some(window) = viewport.window.as_ref() {
                 epi_integration::apply_window_settings(window, window_settings);
             };
-            epi_integration::apply_window_settings(window, window_settings);
         }
 
         let gl = unsafe {
