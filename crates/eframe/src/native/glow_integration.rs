@@ -682,7 +682,7 @@ impl GlowWinitRunning {
         viewport.info.events.clear(); // they should have been processed
 
         let (Some(egui_winit), Some(window), Some(gl_surface)) = (
-            &mut viewport.egui_winit,
+            viewport.egui_winit.as_mut(),
             &viewport.window.clone(),
             &viewport.gl_surface,
         ) else {
