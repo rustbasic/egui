@@ -170,7 +170,9 @@ impl GlowWinitApp {
 
         {
             let viewport = &glutin_window_context.viewports[&ViewportId::ROOT];
-            let window = viewport.window.as_ref().unwrap(); // Can't fail - we just called `initialize_all_viewports`
+            if let Some(window) = viewport.window.as_ref() {
+                epi_integration::apply_window_settings(window, window_settings);
+            };
             epi_integration::apply_window_settings(window, window_settings);
         }
 
@@ -267,15 +269,16 @@ impl GlowWinitApp {
         #[cfg(feature = "accesskit")]
         {
             let event_loop_proxy = self.repaint_proxy.lock().clone();
-            let viewport = glutin.viewports.get_mut(&ViewportId::ROOT).unwrap(); // we always have a root
-            if let Viewport {
-                window: Some(window),
-                egui_winit: Some(egui_winit),
-                ..
-            } = viewport
-            {
-                integration.init_accesskit(egui_winit, window, event_loop_proxy);
-            }
+            if let Some(viewport) = glutin.viewports.get_mut(&ViewportId::ROOT) {
+                if let Viewport {
+                    window: Some(window),
+                    egui_winit: Some(egui_winit),
+                    ..
+                } = viewport
+                {
+                    integration.init_accesskit(egui_winit, window, event_loop_proxy);
+                }
+            };
         }
 
         let theme = system_theme.unwrap_or(self.native_options.default_theme);
@@ -332,16 +335,16 @@ impl GlowWinitApp {
                     // SAFETY: the event loop lives longer than
                     // the Rc:s we just upgraded above.
                     #[allow(unsafe_code)]
-                    let event_loop = unsafe { event_loop.as_ref().unwrap() };
-
-                    render_immediate_viewport(
-                        event_loop,
-                        egui_ctx,
-                        &glutin,
-                        &painter,
-                        beginning,
-                        immediate_viewport,
-                    );
+                    if let Some(event_loop) = unsafe { event_loop.as_ref() } {
+                        render_immediate_viewport(
+                            event_loop,
+                            egui_ctx,
+                            &glutin,
+                            &painter,
+                            beginning,
+                            immediate_viewport,
+                        );
+                    };
                 } else {
                     log::warn!("render_sync_callback called after window closed");
                 }
@@ -646,11 +649,15 @@ impl GlowWinitRunning {
         let Some(viewport) = viewports.get_mut(&viewport_id) else {
             return EventResult::Wait;
         };
-
         viewport.info.events.clear(); // they should have been processed
-        let window = viewport.window.clone().unwrap();
-        let gl_surface = viewport.gl_surface.as_ref().unwrap();
-        let egui_winit = viewport.egui_winit.as_mut().unwrap();
+
+        let (Some(egui_winit), Some(window), Some(gl_surface)) = (
+            viewport.egui_winit.as_mut(),
+            &viewport.window.clone(),
+            &viewport.gl_surface,
+        ) else {
+            return EventResult::Wait;
+        };
 
         egui_winit.handle_platform_output(&window, platform_output);
 
@@ -709,7 +716,7 @@ impl GlowWinitRunning {
                 }
             }
 
-            integration.post_rendering(&window);
+            integration.post_rendering(window);
         }
 
         {
@@ -1160,11 +1167,13 @@ impl GlutinWindowContext {
                 if let Some(not_current_context) = self.not_current_gl_context.take() {
                     not_current_context
                 } else {
-                    self.current_gl_context
-                        .take()
-                        .unwrap()
-                        .make_not_current()
-                        .unwrap()
+                    let Some(current_gl) = self.current_gl_context.take() else {
+                        return Ok(());
+                    };
+                    let Ok(not_current) = current_gl.make_not_current() else {
+                        return Ok(());
+                    };
+                    not_current
                 };
             let current_gl_context = not_current_gl_context.make_current(&gl_surface)?;
 
