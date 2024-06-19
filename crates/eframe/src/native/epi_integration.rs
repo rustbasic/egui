@@ -315,9 +315,9 @@ impl EpiIntegration {
             if continuous_mode {
                 let viewport_id = egui_ctx.viewport_id();
                 // TODO(rustbasic) : Do not recall until the next repaint.
-                // 1000 millis / 60 fps = 16.67 millis
+                // 1000 millis / 60 fps = 16.66 millis
                 self.egui_ctx
-                    .request_repaint_after_for(std::time::Duration::from_millis(8), viewport_id);
+                    .request_repaint_after_for(std::time::Duration::from_millis(16), viewport_id);
             }
         });
 
