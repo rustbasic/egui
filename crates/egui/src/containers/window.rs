@@ -61,7 +61,7 @@ impl<'open> Window<'open> {
                 .min_size([96.0, 32.0])
                 .default_size([340.0, 420.0]), // Default inner size of a window
             // resize: Resize::default().with_stroke(false).min_size([96.0, 32.0]),
-            scroll: ScrollArea::neither(),
+            scroll: ScrollArea::neither().auto_shrink(false),
             collapsible: true,
             closebutton: true,
             default_open: true,
