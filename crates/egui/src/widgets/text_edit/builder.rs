@@ -425,7 +425,7 @@ impl<'t> TextEdit<'t> {
                         frame_rect,
                         visuals.rounding,
                         ui.visuals().extreme_bg_color,
-                        visuals.bg_stroke, // TODO(emilk): we want to show something here, or a text-edit field doesn't "pop".
+                        ui.visuals().widgets.noninteractive.bg_stroke, // TODO(emilk): we want to show something here, or a text-edit field doesn't "pop".
                     )
                 }
             } else {
@@ -521,13 +521,13 @@ impl<'t> TextEdit<'t> {
             }
         });
         let mut state = TextEditState::load(ui.ctx(), id).unwrap_or_default();
+        let mut has_focus = ui.memory(|mem| mem.has_focus(id));
 
         // On touch screens (e.g. mobile in `eframe` web), should
         // dragging select text, or scroll the enclosing [`ScrollArea`] (if any)?
         // Since currently copying selected text in not supported on `eframe` web,
         // we prioritize touch-scrolling:
-        let allow_drag_to_select =
-            ui.input(|i| !i.has_touch_screen()) || ui.memory(|mem| mem.has_focus(id));
+        let allow_drag_to_select = ui.input(|i| !i.has_touch_screen()) || has_focus;
 
         let sense = if interactive {
             if allow_drag_to_select {
@@ -575,6 +575,7 @@ impl<'t> TextEdit<'t> {
 
                 if did_interact {
                     ui.memory_mut(|mem| mem.request_focus(response.id));
+                    has_focus = true;
                 }
             }
         }
@@ -585,7 +586,7 @@ impl<'t> TextEdit<'t> {
 
         let mut cursor_range = None;
         let prev_cursor_range = state.cursor.range(&galley);
-        if interactive && ui.memory(|mem| mem.has_focus(id)) {
+        if interactive && has_focus {
             ui.memory_mut(|mem| mem.set_focus_lock_filter(id, event_filter));
 
             let default_cursor_range = if cursor_at_end {
@@ -624,7 +625,7 @@ impl<'t> TextEdit<'t> {
 
         // Visual clipping for singleline text editor with text larger than width
         if clip_text && align_offset == 0.0 {
-            let cursor_pos = match (cursor_range, ui.memory(|mem| mem.has_focus(id))) {
+            let cursor_pos = match (cursor_range, has_focus) {
                 (Some(cursor_range), true) => galley.pos_from_cursor(&cursor_range.primary).min.x,
                 _ => 0.0,
             };
@@ -682,7 +683,7 @@ impl<'t> TextEdit<'t> {
                 painter.galley(rect.min, galley, hint_text_color);
             }
 
-            if ui.memory(|mem| mem.has_focus(id)) {
+            if has_focus {
                 if let Some(cursor_range) = state.cursor.range(&galley) {
                     // We paint the cursor on top of the text, in case
                     // the text galley has backgrounds (as e.g. `code` snippets in markup do).
@@ -729,9 +730,14 @@ impl<'t> TextEdit<'t> {
                             .unwrap_or_default();
 
                         ui.ctx().output_mut(|o| {
+                            let mut ime_cursor_rect = primary_cursor_rect;
+                            ime_cursor_rect.max.x += primary_cursor_rect.height();
                             o.ime = Some(crate::output::IMEOutput {
+                                visible: ui.visuals().text_cursor.ime_visible,
+                                allowed_ime: ui.visuals().text_cursor.ime_allowed,
+                                ime_enabled: state.ime_enabled,
                                 rect: transform * rect,
-                                cursor_rect: transform * primary_cursor_rect,
+                                cursor_rect: transform * ime_cursor_rect,
                             });
                         });
                     }
@@ -749,7 +755,7 @@ impl<'t> TextEdit<'t> {
                 )
             });
         } else if selection_changed {
-            let cursor_range = cursor_range.unwrap();
+            let cursor_range = cursor_range.unwrap_or_default();
             let char_range =
                 cursor_range.primary.ccursor.index..=cursor_range.secondary.ccursor.index;
             let info = WidgetInfo::text_selection_changed(
@@ -849,7 +855,14 @@ fn events(
 
     let mut any_change = false;
 
-    let events = ui.input(|i| i.filtered_events(&event_filter));
+    let mut events = ui.input(|i| i.filtered_events(&event_filter));
+
+    if state.ime_enabled {
+        ime_enabled_filter_events(&mut events);
+        // Process IME events first:
+        events.sort_by_key(|e| !matches!(e, Event::Ime(_)));
+    }
+
     for event in &events {
         let did_mutate_text = match event {
             // First handle events that only changes the selection cursor, not the text:
@@ -977,6 +990,7 @@ fn events(
             Event::Ime(ime_event) => match ime_event {
                 ImeEvent::Enabled => {
                     state.ime_enabled = true;
+                    state.ime_target_id = id;
                     state.ime_cursor_range = cursor_range;
                     None
                 }
@@ -1002,6 +1016,7 @@ fn events(
                         state.ime_enabled = false;
 
                         if !prediction.is_empty()
+                            && state.ime_target_id == id
                             && cursor_range.secondary.ccursor.index
                                 == state.ime_cursor_range.secondary.ccursor.index
                         {
@@ -1045,6 +1060,23 @@ fn events(
     );
 
     (any_change, cursor_range)
+}
+
+// ----------------------------------------------------------------------------
+
+fn ime_enabled_filter_events(events: &mut Vec<Event>) {
+    // Remove key events which cause problems while 'IME' is being used.
+    // See https://github.com/emilk/egui/pull/4509
+    events.retain(|event| {
+        !matches!(
+            event,
+            Event::Key { repeat: true, .. }
+                | Event::Key {
+                    key: Key::Backspace,
+                    ..
+                }
+        )
+    });
 }
 
 // ----------------------------------------------------------------------------
