@@ -1145,7 +1145,7 @@ impl ViewportOutput {
         let Self {
             parent,
             class,
-            builder,
+            builder: _,
             viewport_ui_cb,
             mut commands,
             repaint_delay,
@@ -1153,8 +1153,10 @@ impl ViewportOutput {
 
         self.parent = parent;
         self.class = class;
-        let _ = self.builder.patch(builder); // we ignore the returned command, because `self.builder` will be the basis of a new patch
         self.viewport_ui_cb = viewport_ui_cb;
+
+        // we ignore the returned command, because `self.builder` will be the basis of a new patch
+        // let (mut _commands, _recreate_window) = self.builder.patch(builder);
         self.commands.append(&mut commands);
         self.repaint_delay = self.repaint_delay.min(repaint_delay);
     }
