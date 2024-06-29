@@ -1,5 +1,7 @@
 //! The input needed by egui.
 
+use std::{sync::Arc, sync::RwLock};
+
 use epaint::ColorImage;
 
 use crate::{emath::*, Key, ViewportId, ViewportIdMap};
@@ -100,6 +102,12 @@ impl RawInput {
         self.viewports.get(&self.viewport_id).expect("Failed to find current viewport in egui RawInput. This is the fault of the egui backend")
     }
 
+    /// Read-write access to [`ViewportInfo`].
+    #[inline]
+    pub fn viewport_mut(&mut self) -> &mut ViewportInfo {
+        self.viewports.get_mut(&self.viewport_id).expect("Failed to find current viewport in egui RawInput. This is the fault of the egui backend")
+    }
+
     /// Helper: move volatile (deltas and events), clone the rest.
     ///
     /// * [`Self::hovered_files`] is cloned.
@@ -173,11 +181,15 @@ pub enum ViewportEvent {
 ///
 /// All units are in ui "points", which can be calculated from native physical pixels
 /// using `pixels_per_point` = [`crate::Context::zoom_factor`] * `[Self::native_pixels_per_point`];
+#[allow(clippy::disallowed_types)]
 #[derive(Clone, Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct ViewportInfo {
+    /// this viewport, if known.
+    pub this: ViewportId,
+
     /// Parent viewport, if known.
-    pub parent: Option<crate::ViewportId>,
+    pub parent: Option<ViewportId>,
 
     /// Name of the viewport, if known.
     pub title: Option<String>,
@@ -214,10 +226,22 @@ pub struct ViewportInfo {
     /// Are we in fullscreen mode?
     pub fullscreen: Option<bool>,
 
+    /// Are we transparent mode?
+    pub transparent: Option<bool>,
+
+    /// Are we decorations mode?
+    pub decorations: Option<bool>,
+
     /// Is the window focused and able to receive input?
     ///
     /// This should be the same as [`RawInput::focused`].
     pub focused: Option<bool>,
+
+    /// If this is 'true', you can wait for the selection result without Close.
+    /// If this is 'false' (default), it closes immediately without waiting.
+    pub close_cancelable: Arc<RwLock<Option<bool>>>,
+
+    pub close_requested: Arc<RwLock<bool>>,
 }
 
 impl ViewportInfo {
@@ -230,13 +254,69 @@ impl ViewportInfo {
     /// If this is not the root viewport,
     /// it is up to the user to hide this viewport the next frame.
     pub fn close_requested(&self) -> bool {
+        self.is_close_requested()
+        /*
         self.events
             .iter()
             .any(|&event| event == ViewportEvent::Close)
+        */
+    }
+
+    pub fn is_close_requested(&self) -> bool {
+        let Ok(close_requested) = self.close_requested.read() else {
+            return false;
+        };
+        *close_requested
+    }
+
+    pub fn close_requested_on(&self) {
+        let Ok(mut close_requested) = self.close_requested.write() else {
+            return;
+        };
+        *close_requested = true;
+    }
+
+    pub fn close_requested_off(&self) {
+        let Ok(mut close_requested) = self.close_requested.write() else {
+            return;
+        };
+        *close_requested = false;
+    }
+
+    pub fn is_close_cancelable(&self) -> bool {
+        let Ok(close_cancelable) = self.close_cancelable.write() else {
+            return false;
+        };
+        close_cancelable.unwrap_or(false)
+    }
+
+    pub fn close_cancelable_on(&mut self) {
+        let Ok(mut close_cancelable) = self.close_cancelable.write() else {
+            return;
+        };
+
+        // Setting to ON only once. Setting will be ignored if it is already set.
+        if close_cancelable.is_some() {
+            return;
+        }
+
+        *close_cancelable = Some(true);
+    }
+
+    pub fn close_cancelable_off(&mut self) {
+        let Ok(mut close_cancelable) = self.close_cancelable.write() else {
+            return;
+        };
+        *close_cancelable = Some(false);
+    }
+
+    pub fn should_close(&self) -> bool {
+        self.is_close_requested() && !self.is_close_cancelable()
     }
 
     pub fn ui(&self, ui: &mut crate::Ui) {
         let Self {
+            this,
             parent,
             title,
             events,
@@ -247,10 +327,18 @@ impl ViewportInfo {
             minimized,
             maximized,
             fullscreen,
+            transparent,
+            decorations,
             focused,
+            close_cancelable,
+            close_requested,
         } = self;
 
         crate::Grid::new("viewport_info").show(ui, |ui| {
+            ui.label("this:");
+            ui.label(format!("{this:?}"));
+            ui.end_row();
+
             ui.label("Parent:");
             ui.label(opt_as_str(parent));
             ui.end_row();
@@ -291,8 +379,24 @@ impl ViewportInfo {
             ui.label(opt_as_str(fullscreen));
             ui.end_row();
 
+            ui.label("Transparent:");
+            ui.label(opt_as_str(transparent));
+            ui.end_row();
+
+            ui.label("Decorations:");
+            ui.label(opt_as_str(decorations));
+            ui.end_row();
+
             ui.label("Focused:");
             ui.label(opt_as_str(focused));
+            ui.end_row();
+
+            ui.label("Close Cancelable:");
+            ui.label(format!("{close_cancelable:?}"));
+            ui.end_row();
+
+            ui.label("Close Requested:");
+            ui.label(format!("{close_requested:?}"));
             ui.end_row();
 
             fn opt_rect_as_string(v: &Option<Rect>) -> String {
@@ -557,7 +661,7 @@ pub struct Modifiers {
     /// Either of the shift keys are down.
     pub shift: bool,
 
-    /// The Mac ⌘ Command key. Should always be set to `false` on other platforms.
+    /// The Mac ⌘ Command key. Is the super key on other platforms.
     pub mac_cmd: bool,
 
     /// On Windows and Linux, set this to the same value as `ctrl`.
@@ -691,20 +795,44 @@ impl Modifiers {
         self.alt && self.ctrl && self.shift && self.command
     }
 
+    /// Is alt the only pressed button?
+    #[inline]
+    pub fn alt_only(&self) -> bool {
+        self.alt && !(self.ctrl || self.shift || self.command)
+    }
+
+    /// Is ctrl the only pressed button?
+    #[inline]
+    pub fn ctrl_only(&self) -> bool {
+        self.ctrl && !(self.alt || self.shift || self.command)
+    }
+
     /// Is shift the only pressed button?
     #[inline]
     pub fn shift_only(&self) -> bool {
-        self.shift && !(self.alt || self.command)
+        self.shift && !(self.alt || self.ctrl || self.command)
+    }
+
+    /// Is super the only pressed button?
+    #[inline]
+    pub fn super_only(&self) -> bool {
+        self.mac_cmd && !(self.alt || self.ctrl || self.shift)
+    }
+
+    /// true if only [`Self::mac_cmd`] is pressed on `MacOs`.
+    #[inline]
+    pub fn mac_cmd_only(&self) -> bool {
+        self.super_only()
     }
 
     /// true if only [`Self::ctrl`] or only [`Self::mac_cmd`] is pressed.
     #[inline]
     pub fn command_only(&self) -> bool {
-        !self.alt && !self.shift && self.command
+        self.command && !(self.alt || self.shift)
     }
 
     /// Checks that the `ctrl/cmd` matches, and that the `shift/alt` of the argument is a subset
-    /// of the pressed ksey (`self`).
+    /// of the pressed key (`self`).
     ///
     /// This means that if the pattern has not set `shift`, then `self` can have `shift` set or not.
     ///
