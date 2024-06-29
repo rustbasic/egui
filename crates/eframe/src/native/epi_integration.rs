@@ -7,7 +7,7 @@ use winit::event_loop::EventLoopWindowTarget;
 
 use raw_window_handle::{HasDisplayHandle as _, HasWindowHandle as _};
 
-use egui::{DeferredViewportUiCallback, NumExt as _, ViewportBuilder, ViewportId};
+use egui::{DeferredViewportUiCallback, NumExt as _, ViewportBuilder};
 use egui_winit::{EventResponse, WindowSettings};
 
 use crate::{epi, Theme};
@@ -156,12 +156,10 @@ pub struct EpiIntegration {
     is_first_frame: bool,
     pub frame_start: Instant,
     pub egui_ctx: egui::Context,
-    pending_full_output: egui::FullOutput,
 
     /// When set, it is time to close the native window.
     close: bool,
 
-    can_drag_window: bool,
     follow_system_theme: bool,
     #[cfg(feature = "persistence")]
     persist_window: bool,
@@ -218,9 +216,7 @@ impl EpiIntegration {
             frame,
             last_auto_save: Instant::now(),
             egui_ctx,
-            pending_full_output: Default::default(),
             close: false,
-            can_drag_window: false,
             follow_system_theme: native_options.follow_system_theme,
             #[cfg(feature = "persistence")]
             persist_window: native_options.persist_window,
@@ -252,10 +248,14 @@ impl EpiIntegration {
         });
     }
 
+    /*
+
     /// If `true`, it is time to close the native window.
     pub fn should_close(&self) -> bool {
-        self.close
+        // self.close
+        self.egui_ctx.input(|i| i.viewport().should_close())
     }
+    */
 
     pub fn on_window_event(
         &mut self,
@@ -265,18 +265,13 @@ impl EpiIntegration {
     ) -> EventResponse {
         crate::profile_function!(egui_winit::short_window_event_description(event));
 
-        use winit::event::{ElementState, MouseButton, WindowEvent};
+        use winit::event::WindowEvent;
 
         match event {
             WindowEvent::Destroyed => {
                 log::debug!("Received WindowEvent::Destroyed");
                 self.close = true;
             }
-            WindowEvent::MouseInput {
-                button: MouseButton::Left,
-                state: ElementState::Pressed,
-                ..
-            } => self.can_drag_window = true,
             WindowEvent::ThemeChanged(winit_theme) if self.follow_system_theme => {
                 let theme = theme_from_winit_theme(*winit_theme);
                 self.frame.info.system_theme = Some(theme);
@@ -303,36 +298,32 @@ impl EpiIntegration {
     ) -> egui::FullOutput {
         raw_input.time = Some(self.beginning.elapsed().as_secs_f64());
 
-        let close_requested = raw_input.viewport().close_requested();
-
         app.raw_input_hook(&self.egui_ctx, &mut raw_input);
 
         let full_output = self.egui_ctx.run(raw_input, |egui_ctx| {
             if let Some(viewport_ui_cb) = viewport_ui_cb {
-                // Child viewport
+                // Child Deferred Viewport
                 crate::profile_scope!("viewport_callback");
                 viewport_ui_cb(egui_ctx);
             } else {
+                // ROOT Viewport ( with Immediate Viewport )
                 crate::profile_scope!("App::update");
                 app.update(egui_ctx, &mut self.frame);
             }
+
+            let continuous_mode = egui_ctx.options(|options| options.continuous_mode);
+            if continuous_mode {
+                let viewport_id = egui_ctx.viewport_id();
+                // TODO(rustbasic) : Do not recall until the next repaint.
+                // 1000 millis / 60 fps = 16.66 millis
+                self.egui_ctx
+                    .request_repaint_after_for(std::time::Duration::from_millis(16), viewport_id);
+            }
         });
 
-        let is_root_viewport = viewport_ui_cb.is_none();
-        if is_root_viewport && close_requested {
-            let canceled = full_output.viewport_output[&ViewportId::ROOT]
-                .commands
-                .contains(&egui::ViewportCommand::CancelClose);
-            if canceled {
-                log::debug!("Closing of root viewport canceled with ViewportCommand::CancelClose");
-            } else {
-                log::debug!("Closing root viewport (ViewportCommand::CancelClose was not sent)");
-                self.close = true;
-            }
-        }
-
-        self.pending_full_output.append(full_output);
-        std::mem::take(&mut self.pending_full_output)
+        // self.pending_full_output.append(full_output);
+        // std::mem::take(&mut self.pending_full_output)
+        full_output
     }
 
     pub fn report_frame_time(&mut self, seconds: f32) {
