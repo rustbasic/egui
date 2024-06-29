@@ -300,7 +300,7 @@ impl EpiIntegration {
 
         app.raw_input_hook(&self.egui_ctx, &mut raw_input);
 
-        let full_output = self.egui_ctx.run(raw_input, |egui_ctx| {
+        self.egui_ctx.run(raw_input, |egui_ctx| {
             if let Some(viewport_ui_cb) = viewport_ui_cb {
                 // Child Deferred Viewport
                 crate::profile_scope!("viewport_callback");
@@ -319,11 +319,11 @@ impl EpiIntegration {
                 self.egui_ctx
                     .request_repaint_after_for(std::time::Duration::from_millis(16), viewport_id);
             }
-        });
+        })
 
         // self.pending_full_output.append(full_output);
         // std::mem::take(&mut self.pending_full_output)
-        full_output
+        // full_output
     }
 
     pub fn report_frame_time(&mut self, seconds: f32) {
