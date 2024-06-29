@@ -38,8 +38,9 @@ pub struct Resize {
 
     pub(crate) min_size: Vec2,
     pub(crate) max_size: Vec2,
+    pub(crate) margins: Vec2,
 
-    default_size: Vec2,
+    pub(crate) default_size: Vec2,
 
     with_stroke: bool,
 }
@@ -52,7 +53,8 @@ impl Default for Resize {
             resizable: Vec2b::TRUE,
             min_size: Vec2::splat(16.0),
             max_size: Vec2::splat(f32::INFINITY),
-            default_size: vec2(320.0, 128.0), // TODO(emilk): preferred size of [`Resize`] area.
+            margins: Vec2::ZERO,
+            default_size: Vec2::splat(16.0), // TODO(emilk): preferred size of [`Resize`] area.
             with_stroke: true,
         }
     }
@@ -205,17 +207,9 @@ impl Resize {
         let mut state = State::load(ui.ctx(), id).unwrap_or_else(|| {
             ui.ctx().request_repaint(); // counter frame delay
 
-            let default_size = self
-                .default_size
-                .at_least(self.min_size)
-                .at_most(self.max_size)
-                .at_most(
-                    ui.ctx().screen_rect().size() - ui.spacing().window_margin.sum(), // hack for windows
-                );
-
             State {
-                desired_size: default_size,
-                last_content_size: vec2(0.0, 0.0),
+                desired_size: self.default_size,
+                last_content_size: Vec2::ZERO,
                 requested_size: None,
             }
         });
@@ -223,7 +217,8 @@ impl Resize {
         state.desired_size = state
             .desired_size
             .at_least(self.min_size)
-            .at_most(self.max_size);
+            .at_most(self.max_size)
+            .at_most(ui.ctx().screen_rect().size() - self.margins);
 
         let mut user_requested_size = state.requested_size.take();
 
@@ -310,13 +305,14 @@ impl Resize {
                 // We show how large we are,
                 // so we must follow the contents:
 
-                state.desired_size[d] = state.desired_size[d].max(state.last_content_size[d]);
+                state.desired_size[d] = state.desired_size[d].at_least(state.last_content_size[d]);
 
                 // We are as large as we look
                 size[d] = state.desired_size[d];
             } else {
                 // Probably a window.
-                size[d] = state.last_content_size[d];
+                state.desired_size[d] = state.last_content_size[d];
+                size[d] = state.desired_size[d];
             }
         }
         ui.advance_cursor_after_rect(Rect::from_min_size(content_ui.min_rect().min, size));
@@ -372,8 +368,6 @@ impl Resize {
         }
     }
 }
-
-use epaint::Stroke;
 
 pub fn paint_resize_corner(ui: &Ui, response: &Response) {
     let stroke = ui.style().interact(response).fg_stroke;
