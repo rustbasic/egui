@@ -270,18 +270,6 @@ impl GlowWinitApp {
         #[cfg(feature = "accesskit")]
         {
             let event_loop_proxy = self.repaint_proxy.lock().clone();
-            if let Some(viewport) = glutin.viewports.get_mut(&ViewportId::ROOT) {
-                if let Viewport {
-                    window: Some(window),
-                    egui_winit: Some(egui_winit),
-                    ..
-                } = viewport
-                {
-                    integration.init_accesskit(egui_winit, window, event_loop_proxy);
-                }
-            };
-            /*
-            let event_loop_proxy = self.repaint_proxy.lock().clone();
             let viewport = glutin.viewports.get_mut(&ViewportId::ROOT).unwrap(); // we always have a root
             if let Viewport {
                 window: Some(window),
@@ -291,7 +279,6 @@ impl GlowWinitApp {
             {
                 integration.init_accesskit(egui_winit, window, event_loop_proxy);
             }
-            */
         }
 
         let theme = system_theme.unwrap_or(self.native_options.default_theme);
@@ -773,7 +760,7 @@ impl GlowWinitRunning {
             }
         }
 
-        egui_winit.handle_platform_output(&window, platform_output);
+        egui_winit.handle_platform_output(window, platform_output);
 
         glutin.handle_viewport_output(event_loop, &integration.egui_ctx, &viewport_output);
 
