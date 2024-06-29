@@ -761,7 +761,7 @@ impl WgpuWinitRunning {
         // When we press the Close button on the Title Bar, `WindowEvent::CloseRequested` occurs,
         // Select whether to use `ViewportCommand::CancelClose` or `ViewportCommand::Close`.
         // If `ViewportCommand::Close` is sent, it is processed here after being handled in `process_viewport_command()`.
-        handle_viewport_close(&viewports, painter, window_id, viewport_id)
+        handle_viewport_close(viewports, painter, window_id, viewport_id)
     }
 
     fn on_window_event(
@@ -830,7 +830,7 @@ impl WgpuWinitRunning {
                         }
 
                         // If `close_cancelable` is `false`, `ViewportCommand::CancelClose` is not possible, it is processed here.
-                        return handle_viewport_close(&viewports, painter, window_id, viewport_id);
+                        return handle_viewport_close(viewports, painter, window_id, viewport_id);
                     }
                 }
             }
