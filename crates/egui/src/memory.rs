@@ -345,10 +345,10 @@ impl Options {
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label("Line scroll speed");
-                    ui.add(
-                        crate::DragValue::new(line_scroll_speed).range(0.0..=f32::INFINITY),
-                    )
-                    .on_hover_text("How many lines to scroll with each tick of the mouse wheel");
+                    ui.add(crate::DragValue::new(line_scroll_speed).range(0.0..=f32::INFINITY))
+                        .on_hover_text(
+                            "How many lines to scroll with each tick of the mouse wheel",
+                        );
                 });
                 ui.horizontal(|ui| {
                     ui.label("Scroll zoom speed");
