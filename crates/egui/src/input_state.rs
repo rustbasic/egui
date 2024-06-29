@@ -2,10 +2,7 @@ mod touch_state;
 
 use crate::data::input::*;
 use crate::{emath::*, util::History};
-use std::{
-    collections::{BTreeMap, HashSet},
-    time::Duration,
-};
+use std::collections::{BTreeMap, HashSet};
 
 pub use crate::Key;
 pub use touch_state::MultiTouchInfo;
@@ -302,7 +299,7 @@ impl InputState {
                 }
             }
 
-            {
+            if unprocessed_scroll_delta_for_zoom != 0.0 {
                 // Smooth scroll-to-zoom:
                 if unprocessed_scroll_delta_for_zoom.abs() < 1.0 {
                     smooth_scroll_delta_for_zoom += unprocessed_scroll_delta_for_zoom;
@@ -345,6 +342,12 @@ impl InputState {
     #[inline]
     pub fn viewport(&self) -> &ViewportInfo {
         self.raw.viewport()
+    }
+
+    /// Read-write access to [`ViewportInfo`].
+    #[inline]
+    pub fn viewport_mut(&mut self) -> &mut ViewportInfo {
+        self.raw.viewport_mut()
     }
 
     #[inline(always)]
@@ -392,30 +395,15 @@ impl InputState {
     }
 
     /// The [`crate::Context`] will call this at the end of each frame to see if we need a repaint.
-    ///
-    /// Returns how long to wait for a repaint.
-    pub fn wants_repaint_after(&self) -> Option<Duration> {
-        if self.pointer.wants_repaint()
+    pub fn wants_repaint(&self) -> bool {
+        self.pointer.wants_repaint()
             || self.unprocessed_scroll_delta.abs().max_elem() > 0.2
             || self.unprocessed_scroll_delta_for_zoom.abs() > 0.2
             || !self.events.is_empty()
-        {
-            // Immediate repaint
-            return Some(Duration::ZERO);
-        }
 
-        if self.any_touches() && !self.pointer.is_decidedly_dragging() {
-            // We need to wake up and check for press-and-hold for the context menu.
-            if let Some(press_start_time) = self.pointer.press_start_time {
-                let press_duration = self.time - press_start_time;
-                if press_duration < MAX_CLICK_DURATION {
-                    let secs_until_menu = MAX_CLICK_DURATION - press_duration;
-                    return Some(Duration::from_secs_f64(secs_until_menu));
-                }
-            }
-        }
-
-        None
+        // We need to wake up and check for press-and-hold for the context menu.
+        // TODO(emilk): wake up after `MAX_CLICK_DURATION` instead of every frame.
+        || (self.any_touches() && !self.pointer.is_decidedly_dragging())
     }
 
     /// Count presses of a key. If non-zero, the presses are consumed, so that this will only return non-zero once.
@@ -479,6 +467,16 @@ impl InputState {
         self.consume_key(modifiers, logical_key)
     }
 
+    /// Verifies that all modifier keys (e.g. Ctrl, Alt) are not pressed.
+    pub fn modifiers_not_pressed(&self) -> bool {
+        self.modifiers.is_none()
+    }
+
+    /// Was only the given key pressed this frame, with no modifiers?
+    pub fn key_pressed_only(&self, desired_key: Key) -> bool {
+        self.num_presses(desired_key) > 0 && self.modifiers_not_pressed()
+    }
+
     /// Was the given key pressed this frame?
     ///
     /// Includes key-repeat events.
@@ -500,6 +498,18 @@ impl InputState {
                 )
             })
             .count()
+    }
+
+    /// Is the given key currently held down and no other keys are held down, including modifier keys?
+    pub fn key_down_exclusive(&self, desired_key: Key) -> bool {
+        self.keys_down.contains(&desired_key)
+            && self.keys_down.len() == 1
+            && self.modifiers_not_pressed()
+    }
+
+    /// Is the given key currently held down and no other keys are held down?
+    pub fn key_down_only(&self, desired_key: Key) -> bool {
+        self.keys_down.contains(&desired_key) && self.modifiers_not_pressed()
     }
 
     /// Is the given key currently held down?
@@ -1226,7 +1236,7 @@ impl InputState {
         ui.collapsing("Raw Input", |ui| raw.ui(ui));
 
         crate::containers::CollapsingHeader::new("🖱 Pointer")
-            .default_open(false)
+            .default_open(true)
             .show(ui, |ui| {
                 pointer.ui(ui);
             });
