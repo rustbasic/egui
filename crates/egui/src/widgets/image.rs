@@ -814,7 +814,7 @@ pub fn decode_gif_uri(uri: &str) -> Result<(&str, usize), String> {
 }
 
 /// checks if uri is a gif file
-fn is_gif_uri(uri: &str) -> bool {
+pub fn is_gif_uri(uri: &str) -> bool {
     uri.ends_with(".gif") || uri.contains(".gif#")
 }
 
