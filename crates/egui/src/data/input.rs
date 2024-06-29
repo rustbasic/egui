@@ -1,6 +1,6 @@
 //! The input needed by egui.
 
-#[allow(clippy::disallowed_types)]
+#![allow(clippy::disallowed_types)]
 use std::{sync::Arc, sync::RwLock};
 
 use epaint::ColorImage;
