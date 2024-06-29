@@ -611,6 +611,14 @@ impl ContextImpl {
             .unwrap_or(&ViewportId::ROOT)
     }
 
+    /// Return the `ViewportId` of his parent.
+    pub(crate) fn parent_viewport_id_of(&self, viewport_id: ViewportId) -> ViewportId {
+        *self
+            .viewport_parents
+            .get(&viewport_id)
+            .unwrap_or(&ViewportId::ROOT)
+    }
+
     fn all_viewport_ids(&self) -> ViewportIdSet {
         self.viewports
             .keys()
@@ -2026,10 +2034,8 @@ impl ContextImpl {
             viewport.widgets_this_frame.clear();
         }
 
-        if repaint_needed {
+        if repaint_needed || viewport.input.wants_repaint() {
             self.request_repaint(ended_viewport_id, RepaintCause::new());
-        } else if let Some(delay) = viewport.input.wants_repaint_after() {
-            self.request_repaint_after(delay, ended_viewport_id, RepaintCause::new());
         }
 
         //  -------------------
@@ -2163,12 +2169,15 @@ impl Context {
 
         self.write(|ctx| {
             let tessellation_options = ctx.memory.options.tessellation_options;
-            let texture_atlas = ctx
-                .fonts
-                .get(&pixels_per_point.into())
-                .expect("tessellate called with a different pixels_per_point than the font atlas was created with. \
-                         You should use egui::FullOutput::pixels_per_point when tessellating.")
-                .texture_atlas();
+            let texture_atlas = match ctx.fonts.get(&pixels_per_point.into()) {
+                Some(fonts) => fonts.texture_atlas(),
+                None => {
+                    ctx.fonts.iter().next()
+                    .expect("tessellate called with a different pixels_per_point than the font atlas was created with. \
+                    You should use egui::FullOutput::pixels_per_point when tessellating.")
+                    .1.texture_atlas()
+                }
+            };
             let (font_tex_size, prepared_discs) = {
                 let atlas = texture_atlas.lock();
                 (atlas.size(), atlas.prepared_discs())
@@ -3153,6 +3162,11 @@ impl Context {
         self.read(|ctx| ctx.parent_viewport_id())
     }
 
+    /// Return the `ViewportId` of his parent.
+    pub fn parent_viewport_id_of(&self, viewport_id: ViewportId) -> ViewportId {
+        self.read(|ctx| ctx.parent_viewport_id_of(viewport_id))
+    }
+
     /// Read the state of the current viewport.
     pub fn viewport<R>(&self, reader: impl FnOnce(&ViewportState) -> R) -> R {
         self.write(|ctx| reader(ctx.viewport()))
@@ -3266,8 +3280,9 @@ impl Context {
             viewport_ui_cb(self, ViewportClass::Embedded);
         } else {
             self.write(|ctx| {
+                let parent_viewport_id = ctx.viewport_id();
                 ctx.viewport_parents
-                    .insert(new_viewport_id, ctx.viewport_id());
+                    .insert(new_viewport_id, parent_viewport_id);
 
                 let viewport = ctx.viewports.entry(new_viewport_id).or_default();
                 viewport.class = ViewportClass::Deferred;
@@ -3327,7 +3342,6 @@ impl Context {
 
             let ids = self.write(|ctx| {
                 let parent_viewport_id = ctx.viewport_id();
-
                 ctx.viewport_parents
                     .insert(new_viewport_id, parent_viewport_id);
 
