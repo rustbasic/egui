@@ -594,7 +594,7 @@ impl ScrollStyle {
             ui.add(DragValue::new(bar_inner_margin).clamp_range(0.0..=32.0));
             ui.label("Inner margin");
         });
-         ui.horizontal(|ui| {
+        ui.horizontal(|ui| {
             ui.add(DragValue::new(bar_outer_margin).range(0.0..=32.0));
             ui.label("Outer margin");
         });
