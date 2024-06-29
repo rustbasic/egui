@@ -335,18 +335,6 @@ impl GlowWinitApp {
                     // SAFETY: the event loop lives longer than
                     // the Rc:s we just upgraded above.
                     #[allow(unsafe_code)]
-                    if let Some(event_loop) = unsafe { event_loop.as_ref() } {
-                        render_immediate_viewport(
-                            event_loop,
-                            egui_ctx,
-                            &glutin,
-                            &painter,
-                            beginning,
-                            immediate_viewport,
-                        );
-                    };
-                    /*
-                    #[allow(unsafe_code)]
                     let event_loop = unsafe { event_loop.as_ref().unwrap() };
 
                     render_immediate_viewport(
@@ -357,7 +345,6 @@ impl GlowWinitApp {
                         beginning,
                         immediate_viewport,
                     );
-                    */
                 } else {
                     log::warn!("render_sync_callback called after window closed");
                 }
