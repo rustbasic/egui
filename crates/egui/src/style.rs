@@ -514,6 +514,7 @@ impl ScrollStyle {
         Self {
             floating: true,
             bar_width: 10.0,
+            bar_inner_margin: 0.0,
             foreground_color: true,
             floating_allocated_width: 0.0,
             dormant_background_opacity: 0.0,
@@ -590,6 +591,10 @@ impl ScrollStyle {
             ui.label("Minimum handle length");
         });
         ui.horizontal(|ui| {
+            ui.add(DragValue::new(bar_inner_margin).clamp_range(0.0..=32.0));
+            ui.label("Inner margin");
+        });
+         ui.horizontal(|ui| {
             ui.add(DragValue::new(bar_outer_margin).range(0.0..=32.0));
             ui.label("Outer margin");
         });
@@ -623,11 +628,6 @@ impl ScrollStyle {
                 opacity_ui(ui, active_handle_opacity);
                 opacity_ui(ui, interact_handle_opacity);
                 ui.end_row();
-            });
-        } else {
-            ui.horizontal(|ui| {
-                ui.add(DragValue::new(bar_inner_margin).range(0.0..=32.0));
-                ui.label("Inner margin");
             });
         }
     }
@@ -694,6 +694,12 @@ pub struct TextCursorStyle {
 
     /// When blinking, this is how long the cursor is invisible.
     pub off_duration: f32,
+
+    /// Whether the IME (Input Method Editor) is allowed.
+    pub ime_allowed: bool,
+
+    /// Whether the IME should be visible.
+    pub ime_visible: bool,
 }
 
 impl Default for TextCursorStyle {
@@ -704,6 +710,8 @@ impl Default for TextCursorStyle {
             blink: true,
             on_duration: 0.5,
             off_duration: 0.5,
+            ime_allowed: true,
+            ime_visible: false,
         }
     }
 }
@@ -1979,6 +1987,8 @@ impl TextCursorStyle {
             blink,
             on_duration,
             off_duration,
+            ime_allowed,
+            ime_visible,
         } = self;
 
         ui.horizontal(|ui| {
@@ -2011,6 +2021,10 @@ impl TextCursorStyle {
                 ui.end_row();
             });
         }
+
+        ui.checkbox(ime_allowed, "Whether the IME is allowed");
+
+        ui.checkbox(ime_visible, "Whether the IME should be visible");
     }
 }
 
