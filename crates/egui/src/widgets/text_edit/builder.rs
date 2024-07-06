@@ -1070,23 +1070,11 @@ fn ime_enabled_filter_events(events: &mut Vec<Event>) {
             event,
             Event::Key { repeat: true, .. }
                 | Event::Key {
-                    key: Key::Backspace,
-                    ..
-                }
-                | Event::Key {
-                    key: Key::ArrowUp,
-                    ..
-                }
-                | Event::Key {
-                    key: Key::ArrowDown,
-                    ..
-                }
-                | Event::Key {
-                    key: Key::ArrowLeft,
-                    ..
-                }
-                | Event::Key {
-                    key: Key::ArrowRight,
+                    key: Key::Backspace
+                        | Key::ArrowUp
+                        | Key::ArrowDown
+                        | Key::ArrowLeft
+                        | Key::ArrowRight,
                     ..
                 }
         )
