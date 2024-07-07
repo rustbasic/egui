@@ -858,7 +858,7 @@ fn events(
     let mut events = ui.input(|i| i.filtered_events(&event_filter));
 
     if state.ime_enabled {
-        ime_enabled_filter_events(&mut events);
+        remove_ime_incompatible_events(&mut events);
         // Process IME events first:
         events.sort_by_key(|e| !matches!(e, Event::Ime(_)));
     }
@@ -1062,7 +1062,7 @@ fn events(
 
 // ----------------------------------------------------------------------------
 
-fn ime_enabled_filter_events(events: &mut Vec<Event>) {
+fn remove_ime_incompatible_events(events: &mut Vec<Event>) {
     // Remove key events which cause problems while 'IME' is being used.
     // See https://github.com/emilk/egui/pull/4509
     events.retain(|event| {
