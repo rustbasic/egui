@@ -75,10 +75,6 @@ fn run_and_return(event_loop: &mut EventLoop<UserEvent>, mut winit_app: impl Win
 
         log::trace!("winit event: {event:?}");
 
-        if matches!(event, winit::event::Event::AboutToWait) {
-            return; // early-out: don't trigger another wait
-        }
-
         let event_result = match &event {
             winit::event::Event::LoopExiting => {
                 // On Mac, Cmd-Q we get here and then `run_on_demand` doesn't return (despite its name),
@@ -87,6 +83,8 @@ fn run_and_return(event_loop: &mut EventLoop<UserEvent>, mut winit_app: impl Win
                 winit_app.save_and_destroy();
                 return;
             }
+
+            winit::event::Event::AboutToWait => EventResult::Wait,
 
             winit::event::Event::WindowEvent {
                 event: winit::event::WindowEvent::RedrawRequested,
@@ -243,15 +241,13 @@ fn run_and_exit(
 
         log::trace!("winit event: {event:?}");
 
-        if matches!(event, winit::event::Event::AboutToWait) {
-            return; // early-out: don't trigger another wait
-        }
-
         let event_result = match &event {
             winit::event::Event::LoopExiting => {
                 log::debug!("Received Event::LoopExiting");
                 EventResult::Exit
             }
+
+            winit::event::Event::AboutToWait => EventResult::Wait,
 
             winit::event::Event::WindowEvent {
                 event: winit::event::WindowEvent::RedrawRequested,
