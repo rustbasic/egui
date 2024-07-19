@@ -521,13 +521,13 @@ impl<'t> TextEdit<'t> {
             }
         });
         let mut state = TextEditState::load(ui.ctx(), id).unwrap_or_default();
+        let has_focus = ui.memory(|mem| mem.has_focus(id));
 
         // On touch screens (e.g. mobile in `eframe` web), should
         // dragging select text, or scroll the enclosing [`ScrollArea`] (if any)?
         // Since currently copying selected text in not supported on `eframe` web,
         // we prioritize touch-scrolling:
-        let allow_drag_to_select =
-            ui.input(|i| !i.has_touch_screen()) || ui.memory(|mem| mem.has_focus(id));
+        let allow_drag_to_select = has_focus || ui.input(|i| !i.has_touch_screen());
 
         let sense = if interactive {
             if allow_drag_to_select {
@@ -554,8 +554,11 @@ impl<'t> TextEdit<'t> {
                 // TODO(emilk): drag selected text to either move or clone (ctrl on windows, alt on mac)
 
                 let singleline_offset = vec2(state.singleline_offset, 0.0);
-                let cursor_at_pointer =
-                    galley.cursor_from_pos(pointer_pos - rect.min + singleline_offset);
+                let cursor_at_pointer = if has_focus {
+                    galley.cursor_from_pos(pointer_pos - rect.min + singleline_offset)
+                } else {
+                    state.cursor.range(&galley).unwrap_or_default().primary
+                };
 
                 if ui.visuals().text_cursor.preview
                     && response.hovered()
