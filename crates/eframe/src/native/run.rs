@@ -104,14 +104,14 @@ fn run_and_return(event_loop: &mut EventLoop<UserEvent>, mut winit_app: impl Win
                 let current_frame_nr = winit_app.frame_nr(*viewport_id);
                 if current_frame_nr == *frame_nr || current_frame_nr == *frame_nr + 1 {
                     log::trace!("UserEvent::RequestRepaint scheduling repaint at {when:?}");
-                    if let Some(window_id) = winit_app.window_id_from_viewport_id(*viewport_id) {
-                        EventResult::RepaintAt(window_id, *when)
-                    } else {
-                        EventResult::Wait
-                    }
                 } else {
                     log::trace!("Got outdated UserEvent::RequestRepaint");
-                    EventResult::Wait // old request - we've already repainted
+                }
+
+                if let Some(window_id) = winit_app.window_id_from_viewport_id(*viewport_id) {
+                    EventResult::RepaintAt(window_id, *when)
+                } else {
+                    EventResult::Wait
                 }
             }
 
@@ -189,13 +189,8 @@ fn run_and_return(event_loop: &mut EventLoop<UserEvent>, mut winit_app: impl Win
 
             if let Some(window) = winit_app.window(*window_id) {
                 log::trace!("request_redraw for {window_id:?}");
-                let is_minimized = window.is_minimized().unwrap_or(false);
-                if is_minimized {
-                    false
-                } else {
-                    window.request_redraw();
-                    true
-                }
+                window.request_redraw();
+                true
             } else {
                 log::trace!("No window found for {window_id:?}");
                 false
@@ -347,13 +342,8 @@ fn run_and_exit(
 
             if let Some(window) = winit_app.window(*window_id) {
                 log::trace!("request_redraw for {window_id:?}");
-                let is_minimized = window.is_minimized().unwrap_or(false);
-                if is_minimized {
-                    false
-                } else {
-                    window.request_redraw();
-                    true
-                }
+                window.request_redraw();
+                true
             } else {
                 log::trace!("No window found for {window_id:?}");
                 false
