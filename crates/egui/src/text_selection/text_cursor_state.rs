@@ -130,7 +130,7 @@ impl TextCursorState {
                         self.set_range(Some(CursorRange::one(cursor_at_pointer)));
                     }
                 } else if !response.has_focus() {
-                    self.set_range(self.range(&galley));
+                    self.set_range(self.range(galley));
                 } else {
                     self.set_range(Some(CursorRange::one(cursor_at_pointer)));
                 }
