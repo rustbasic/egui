@@ -425,7 +425,7 @@ impl<'t> TextEdit<'t> {
                         frame_rect,
                         visuals.rounding,
                         ui.visuals().extreme_bg_color,
-                        ui.visuals().widgets.noninteractive.bg_stroke, // TODO(emilk): we want to show something here, or a text-edit field doesn't "pop".
+                        visuals.bg_stroke, // TODO(emilk): we want to show something here, or a text-edit field doesn't "pop".
                     )
                 }
             } else {
@@ -481,23 +481,12 @@ impl<'t> TextEdit<'t> {
         const MIN_WIDTH: f32 = 24.0; // Never make a [`TextEdit`] more narrow than this.
         let available_width = (ui.available_width() - margin.sum().x).at_least(MIN_WIDTH);
         let desired_width = desired_width.unwrap_or_else(|| ui.spacing().text_edit_width);
-
-        let wrap_mode = ui.style().wrap_mode.unwrap_or(if multiline {
-            TextWrapMode::Wrap
-        } else {
-            TextWrapMode::Extend
-        });
-        let clip_wrap_width = if ui.layout().horizontal_justify() {
+        let wrap_width = if ui.layout().horizontal_justify() {
             available_width
         } else {
             desired_width.min(available_width)
         };
-        let wrap_width = if wrap_mode == TextWrapMode::Extend {
-            f32::INFINITY
-        } else {
-            clip_wrap_width
-        };
- 
+
         let font_id_clone = font_id.clone();
         let mut default_layouter = move |ui: &Ui, text: &str, wrap_width: f32| {
             let text = mask_if_password(password, text);
@@ -514,9 +503,9 @@ impl<'t> TextEdit<'t> {
         let mut galley = layouter(ui, text.as_str(), wrap_width);
 
         let desired_width = if clip_text {
-            clip_wrap_width // visual clipping with scroll in singleline input.
+            wrap_width // visual clipping with scroll in singleline input.
         } else {
-            galley.size().x.max(clip_wrap_width)
+            galley.size().x.max(wrap_width)
         };
         let desired_height = (desired_height_rows.at_least(1) as f32) * row_height;
         let desired_inner_size = vec2(desired_width, galley.size().y.max(desired_height));
@@ -532,10 +521,6 @@ impl<'t> TextEdit<'t> {
             }
         });
         let mut state = TextEditState::load(ui.ctx(), id).unwrap_or_default();
-
-        if !ui.input(|i| i.focused) {
-            ui.memory_mut(|mem| mem.surrender_focus(id));
-        }
 
         // On touch screens (e.g. mobile in `eframe` web), should
         // dragging select text, or scroll the enclosing [`ScrollArea`] (if any)?
@@ -582,19 +567,14 @@ impl<'t> TextEdit<'t> {
                     text_selection::visuals::paint_cursor_end(&painter, ui.visuals(), cursor_rect);
                 }
 
-                let mut did_interact = false;
-                if response.has_focus() {
-                    let is_being_dragged = ui.ctx().is_being_dragged(response.id);
-                    did_interact = state.cursor.pointer_interaction(
-                        ui,
-                        &response,
-                        cursor_at_pointer,
-                        &galley,
-                        is_being_dragged,
-                    );
-                } else if response.is_pointer_button_down_on() {
-                    did_interact = true;
-                }
+                let is_being_dragged = ui.ctx().is_being_dragged(response.id);
+                let did_interact = state.cursor.pointer_interaction(
+                    ui,
+                    &response,
+                    cursor_at_pointer,
+                    &galley,
+                    is_being_dragged,
+                );
 
                 if did_interact {
                     ui.memory_mut(|mem| mem.request_focus(response.id));
@@ -690,7 +670,7 @@ impl<'t> TextEdit<'t> {
                 let galley = if multiline {
                     hint_text.into_galley(
                         ui,
-                        Some(wrap_mode),
+                        Some(TextWrapMode::Wrap),
                         desired_inner_size.x,
                         hint_text_font_id,
                     )
@@ -702,7 +682,11 @@ impl<'t> TextEdit<'t> {
                         hint_text_font_id,
                     )
                 };
-                painter.galley(rect.min, galley, hint_text_color);
+                let galley_pos = align
+                    .align_size_within_rect(galley.size(), rect)
+                    .intersect(rect)
+                    .min;
+                painter.galley(galley_pos, galley, hint_text_color);
             }
 
             if ui.memory(|mem| mem.has_focus(id)) {
@@ -753,7 +737,6 @@ impl<'t> TextEdit<'t> {
 
                         ui.ctx().output_mut(|o| {
                             o.ime = Some(crate::output::IMEOutput {
-                                visible: ui.visuals().text_cursor.ime_visible,
                                 rect: transform * rect,
                                 cursor_rect: transform * primary_cursor_rect,
                             });
