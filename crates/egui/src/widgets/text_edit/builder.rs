@@ -435,7 +435,7 @@ impl<'t> TextEdit<'t> {
                         frame_rect,
                         visuals.rounding,
                         ui.visuals().extreme_bg_color,
-                        visuals.bg_stroke, // TODO(emilk): we want to show something here, or a text-edit field doesn't "pop".
+                        ui.visuals().widgets.noninteractive.bg_stroke, // TODO(emilk): we want to show something here, or a text-edit field doesn't "pop".
                     )
                 }
             } else {
@@ -532,6 +532,11 @@ impl<'t> TextEdit<'t> {
         });
         let mut state = TextEditState::load(ui.ctx(), id).unwrap_or_default();
 
+        let viewport_has_focus = ui.input(|i| i.focused);
+        if !viewport_has_focus {
+            ui.memory_mut(|mem| mem.surrender_focus(id));
+        }
+
         // On touch screens (e.g. mobile in `eframe` web), should
         // dragging select text, or scroll the enclosing [`ScrollArea`] (if any)?
         // Since currently copying selected text in not supported on `eframe` web,
@@ -577,14 +582,19 @@ impl<'t> TextEdit<'t> {
                     text_selection::visuals::paint_cursor_end(&painter, ui.visuals(), cursor_rect);
                 }
 
-                let is_being_dragged = ui.ctx().is_being_dragged(response.id);
-                let did_interact = state.cursor.pointer_interaction(
-                    ui,
-                    &response,
-                    cursor_at_pointer,
-                    &galley,
-                    is_being_dragged,
-                );
+                let mut did_interact = false;
+                if response.has_focus() || !ui.visuals().text_cursor.retain_position {
+                    let is_being_dragged = ui.ctx().is_being_dragged(response.id);
+                    did_interact = state.cursor.pointer_interaction(
+                        ui,
+                        &response,
+                        cursor_at_pointer,
+                        &galley,
+                        is_being_dragged,
+                    );
+                } else if response.is_pointer_button_down_on() {
+                    did_interact = true;
+                }
 
                 if did_interact || response.clicked() {
                     ui.memory_mut(|mem| mem.request_focus(response.id));
@@ -776,7 +786,7 @@ impl<'t> TextEdit<'t> {
                 )
             });
         } else if selection_changed {
-            let cursor_range = cursor_range.unwrap();
+            let cursor_range = cursor_range.unwrap_or_default();
             let char_range =
                 cursor_range.primary.ccursor.index..=cursor_range.secondary.ccursor.index;
             let info = WidgetInfo::text_selection_changed(
