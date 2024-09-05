@@ -1024,8 +1024,8 @@ impl Prepared {
                 let min_cross = max_cross - width;
                 Rangef::new(min_cross, max_cross)
             } else {
+                let min_cross = inner_rect.max[1 - d] + inner_margin;
                 let max_cross = outer_rect.max[1 - d].at_most(clip_max) - outer_margin;
-                let min_cross = max_cross - scroll_style.bar_width;
                 Rangef::new(min_cross, max_cross)
             };
 
