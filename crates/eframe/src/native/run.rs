@@ -78,7 +78,7 @@ impl<T: WinitApp> WinitAppWrapper<T> {
         event_result: Result<EventResult>,
     ) {
         let mut exit = false;
-        let now = Instant::now();
+        let mut repaint_window_id: Option<WindowId> = None;
 
         log::trace!("event_result: {event_result:?}");
 
@@ -98,25 +98,18 @@ impl<T: WinitApp> WinitAppWrapper<T> {
                             if result == EventResult::Wait {
                                 event_loop.set_control_flow(ControlFlow::Wait);
                             } else {
-                                self.windows_next_repaint_times.insert(window_id, now);
-                                self.windows_next_repaint_times
-                                    .insert(window_id, now + std::time::Duration::from_millis(1));
+                                repaint_window_id = Some(window_id);
                             }
                         }
                         event_result
                     } else {
-                        // Fix for https://github.com/emilk/egui/issues/2425
-                        self.windows_next_repaint_times.insert(window_id, now);
-                        self.windows_next_repaint_times
-                            .insert(window_id, now + std::time::Duration::from_millis(1));
+                        repaint_window_id = Some(window_id);
                         Ok(event_result)
                     }
                 }
                 EventResult::RepaintNext(window_id) => {
                     log::trace!("RepaintNext of {window_id:?}",);
-                    self.windows_next_repaint_times.insert(window_id, now);
-                    self.windows_next_repaint_times
-                        .insert(window_id, now + std::time::Duration::from_millis(1));
+                    repaint_window_id = Some(window_id);
                     Ok(event_result)
                 }
                 EventResult::RepaintAt(window_id, repaint_time) => {
@@ -154,6 +147,13 @@ impl<T: WinitApp> WinitAppWrapper<T> {
                 #[allow(clippy::exit)]
                 std::process::exit(0);
             }
+        }
+
+        let now = Instant::now();
+        if let Some(window_id) = repaint_window_id {
+            self.windows_next_repaint_times.insert(window_id, now);
+            self.windows_next_repaint_times
+                .insert(window_id, now + std::time::Duration::from_millis(1));
         }
 
         self.check_redraw_requests(event_loop, now);
@@ -243,8 +243,8 @@ impl<T: WinitApp> ApplicationHandler<UserEvent> for WinitAppWrapper<T> {
                     viewport_id,
                 } => {
                     let current_frame_nr = self.winit_app.frame_nr(viewport_id);
-                    // if current_frame_nr == frame_nr || current_frame_nr == frame_nr + 1 {
-                    if current_frame_nr == frame_nr + 1 {
+                    if current_frame_nr == frame_nr || current_frame_nr == frame_nr + 1 {
+                    // if current_frame_nr == frame_nr + 1 {
                         log::trace!("UserEvent::RequestRepaint scheduling repaint at {when:?}");
                         if let Some(window_id) =
                             self.winit_app.window_id_from_viewport_id(viewport_id)
