@@ -435,7 +435,7 @@ impl<'t> TextEdit<'t> {
                         frame_rect,
                         visuals.rounding,
                         ui.visuals().extreme_bg_color,
-                        ui.visuals().widgets.noninteractive.bg_stroke, // TODO(emilk): we want to show something here, or a text-edit field doesn't "pop".
+                        visuals.bg_stroke, // TODO(emilk): we want to show something here, or a text-edit field doesn't "pop".
                     )
                 }
             } else {
@@ -891,7 +891,9 @@ fn events(
     let mut events = ui.input(|i| i.filtered_events(&event_filter));
 
     if state.ime_enabled {
-        remove_ime_incompatible_events(&mut events);
+        if ui.visuals().text_edit.ime_support {
+            remove_ime_incompatible_events(&mut events);
+        }
         // Process IME events first:
         events.sort_by_key(|e| !matches!(e, Event::Ime(_)));
     }
