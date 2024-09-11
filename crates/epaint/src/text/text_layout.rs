@@ -241,7 +241,7 @@ fn rows_from_paragraphs(
 }
 
 fn line_break(paragraph: &Paragraph, job: &LayoutJob, out_rows: &mut Vec<Row>, elided: &mut bool) {
-    let wrap_width = job.effective_wrap_width();
+    let wrap_width = job.effective_wrap_width() + 15.5;
 
     // Keeps track of good places to insert row break if we exceed `wrap_width`.
     let mut row_break_candidates = RowBreakCandidates::default();
