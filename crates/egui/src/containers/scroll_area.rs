@@ -832,7 +832,7 @@ impl Prepared {
                     )
                 });
 
-                // FrameState::scroll_delta is inverted from the way we apply the delta, so we need to negate it.
+                // PassState::scroll_delta is inverted from the way we apply the delta, so we need to negate it.
                 let mut delta = -scroll_delta_0;
                 let mut animation = scroll_delta_1;
 
