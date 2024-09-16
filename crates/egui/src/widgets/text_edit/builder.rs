@@ -582,19 +582,14 @@ impl<'t> TextEdit<'t> {
                     text_selection::visuals::paint_cursor_end(&painter, ui.visuals(), cursor_rect);
                 }
 
-                let mut did_interact = false;
-                if response.has_focus() || !ui.visuals().text_cursor.retain_position {
-                    let is_being_dragged = ui.ctx().is_being_dragged(response.id);
-                    did_interact = state.cursor.pointer_interaction(
-                        ui,
-                        &response,
-                        cursor_at_pointer,
-                        &galley,
-                        is_being_dragged,
-                    );
-                } else if response.is_pointer_button_down_on() {
-                    did_interact = true;
-                }
+                let is_being_dragged = ui.ctx().is_being_dragged(response.id);
+                let did_interact = state.cursor.pointer_interaction(
+                    ui,
+                    &response,
+                    cursor_at_pointer,
+                    &galley,
+                    is_being_dragged,
+                );
 
                 if did_interact || response.clicked() {
                     ui.memory_mut(|mem| mem.request_focus(response.id));
@@ -903,16 +898,15 @@ fn events(
 
             Event::Copy => {
                 if cursor_range.is_empty() {
-                    copy_if_not_password(ui, text.as_str().to_owned());
+                    None
                 } else {
                     copy_if_not_password(ui, cursor_range.slice_str(text.as_str()).to_owned());
+                    None
                 }
-                None
             }
             Event::Cut => {
                 if cursor_range.is_empty() {
-                    copy_if_not_password(ui, text.take());
-                    Some(CCursorRange::default())
+                    None
                 } else {
                     copy_if_not_password(ui, cursor_range.slice_str(text.as_str()).to_owned());
                     Some(CCursorRange::one(text.delete_selected(&cursor_range)))
