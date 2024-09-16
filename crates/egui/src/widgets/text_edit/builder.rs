@@ -532,6 +532,11 @@ impl<'t> TextEdit<'t> {
         });
         let mut state = TextEditState::load(ui.ctx(), id).unwrap_or_default();
 
+        let viewport_has_focus = ui.input(|i| i.focused);
+        if !viewport_has_focus {
+            ui.memory_mut(|mem| mem.surrender_focus(id));
+        }
+
         // On touch screens (e.g. mobile in `eframe` web), should
         // dragging select text, or scroll the enclosing [`ScrollArea`] (if any)?
         // Since currently copying selected text in not supported on `eframe` web,
@@ -776,7 +781,7 @@ impl<'t> TextEdit<'t> {
                 )
             });
         } else if selection_changed {
-            let cursor_range = cursor_range.unwrap();
+            let cursor_range = cursor_range.unwrap_or_default();
             let char_range =
                 cursor_range.primary.ccursor.index..=cursor_range.secondary.ccursor.index;
             let info = WidgetInfo::text_selection_changed(
@@ -893,16 +898,15 @@ fn events(
 
             Event::Copy => {
                 if cursor_range.is_empty() {
-                    copy_if_not_password(ui, text.as_str().to_owned());
+                    None
                 } else {
                     copy_if_not_password(ui, cursor_range.slice_str(text.as_str()).to_owned());
+                    None
                 }
-                None
             }
             Event::Cut => {
                 if cursor_range.is_empty() {
-                    copy_if_not_password(ui, text.take());
-                    Some(CCursorRange::default())
+                    None
                 } else {
                     copy_if_not_password(ui, cursor_range.slice_str(text.as_str()).to_owned());
                     Some(CCursorRange::one(text.delete_selected(&cursor_range)))
