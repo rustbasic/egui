@@ -25,7 +25,7 @@ pub fn paint_text_selection(
     // and so we need to clone it if it is shared:
     let galley: &mut Galley = Arc::make_mut(galley);
 
-    let color = visuals.selection.bg_fill;
+    let color = ui.visuals().selection.bg_fill;
     let [min, max] = cursor_range.sorted_cursors();
     let min = min.rcursor;
     let max = max.rcursor;
