@@ -77,8 +77,8 @@ impl<T: WinitApp> WinitAppWrapper<T> {
         event_loop: &ActiveEventLoop,
         event_result: Result<EventResult>,
     ) {
-        let mut exit = false;
         let mut repaint_window_id: Option<WindowId> = None;
+        let mut exit = false;
 
         log::trace!("event_result: {event_result:?}");
 
@@ -153,8 +153,6 @@ impl<T: WinitApp> WinitAppWrapper<T> {
         let now = Instant::now();
         if let Some(window_id) = repaint_window_id {
             self.windows_next_repaint_times.insert(window_id, now);
-            // self.windows_next_repaint_times
-            //     .insert(window_id, now + std::time::Duration::from_millis(1));
         }
 
         self.check_redraw_requests(event_loop, now);
