@@ -77,52 +77,47 @@ impl<T: WinitApp> WinitAppWrapper<T> {
         event_loop: &ActiveEventLoop,
         event_result: Result<EventResult>,
     ) {
-        let mut when = Instant::now();
-        let mut repaint_window_id: Option<WindowId> = None;
+        let now = Instant::now();
         let mut exit = false;
 
         log::trace!("event_result: {event_result:?}");
 
-        let combined_result = event_result.and_then(|event_result| {
-            match event_result {
-                EventResult::Wait => {
-                    event_loop.set_control_flow(ControlFlow::Wait);
-                    Ok(event_result)
-                }
-                EventResult::RepaintNow(window_id) => {
-                    log::trace!("RepaintNow of {window_id:?}",);
+        let mut event_result = event_result;
 
-                    if cfg!(target_os = "windows") {
-                        // Fix flickering on Windows, see https://github.com/emilk/egui/pull/2280
-                        let event_result = self.winit_app.run_ui_and_paint(event_loop, window_id);
-                        if let Ok(result) = event_result {
-                            if result == EventResult::Wait {
-                                event_loop.set_control_flow(ControlFlow::Wait);
-                                repaint_window_id = Some(window_id);
-                            } else {
-                                repaint_window_id = Some(window_id);
-                            }
-                        }
-                        event_result
-                    } else {
-                        repaint_window_id = Some(window_id);
-                        Ok(event_result)
-                    }
+        if cfg!(target_os = "windows") {
+            match event_result {
+                Ok(EventResult::RepaintNow(window_id)) => {
+                    // Fix flickering on Windows, see https://github.com/emilk/egui/pull/2280
+                    let paint_result = self.winit_app.run_ui_and_paint(event_loop, window_id);
+                    self.windows_next_repaint_times.insert(window_id, now);
+                    event_result = paint_result;
                 }
-                EventResult::RepaintNext(window_id) => {
-                    log::trace!("RepaintNext of {window_id:?}",);
-                    repaint_window_id = Some(window_id);
-                    Ok(event_result)
-                }
-                EventResult::RepaintAt(window_id, repaint_time) => {
-                    when = repaint_time;
-                    repaint_window_id = Some(window_id);
-                    Ok(event_result)
-                }
-                EventResult::Exit => {
-                    exit = true;
-                    Ok(event_result)
-                }
+                _ => {}
+            }
+        }
+
+        let combined_result = event_result.and_then(|event_result| match event_result {
+            EventResult::Wait => {
+                event_loop.set_control_flow(ControlFlow::Wait);
+                Ok(event_result)
+            }
+            EventResult::RepaintNow(window_id) => {
+                log::trace!("RepaintNow of {window_id:?}",);
+                self.windows_next_repaint_times.insert(window_id, now);
+                Ok(event_result)
+            }
+            EventResult::RepaintNext(window_id) => {
+                log::trace!("RepaintNext of {window_id:?}",);
+                self.windows_next_repaint_times.insert(window_id, now);
+                Ok(event_result)
+            }
+            EventResult::RepaintAt(window_id, when) => {
+                self.windows_next_repaint_times.insert(window_id, when);
+                Ok(event_result)
+            }
+            EventResult::Exit => {
+                exit = true;
+                Ok(event_result)
             }
         });
 
@@ -145,10 +140,6 @@ impl<T: WinitApp> WinitAppWrapper<T> {
                 #[allow(clippy::exit)]
                 std::process::exit(0);
             }
-        }
-
-        if let Some(window_id) = repaint_window_id {
-            self.windows_next_repaint_times.insert(window_id, when);
         }
 
         self.check_redraw_requests(event_loop);
