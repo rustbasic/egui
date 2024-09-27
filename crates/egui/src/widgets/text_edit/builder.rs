@@ -532,11 +532,6 @@ impl<'t> TextEdit<'t> {
         });
         let mut state = TextEditState::load(ui.ctx(), id).unwrap_or_default();
 
-        let viewport_has_focus = ui.input(|i| i.focused);
-        if !viewport_has_focus {
-            ui.memory_mut(|mem| mem.surrender_focus(id));
-        }
-
         // On touch screens (e.g. mobile in `eframe` web), should
         // dragging select text, or scroll the enclosing [`ScrollArea`] (if any)?
         // Since currently copying selected text in not supported on `eframe` web,
