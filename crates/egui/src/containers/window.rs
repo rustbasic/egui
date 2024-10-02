@@ -577,7 +577,8 @@ impl<'open> Window<'open> {
                         x: outer_rect.size().x,
                         y: title_bar_height,
                     },
-                );
+                )
+                .shrink(frame_stroke.width);
 
                 title_rect = area_content_ui.painter().round_rect_to_pixels(title_rect);
 
