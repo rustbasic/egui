@@ -85,15 +85,12 @@ impl<T: WinitApp> WinitAppWrapper<T> {
         let mut event_result = event_result;
 
         if cfg!(target_os = "windows") {
-            match event_result {
-                Ok(EventResult::RepaintNow(window_id)) => {
-                    log::info!("RepaintNow of {window_id:?}",);
-                    self.windows_next_repaint_times.insert(window_id, now);
+            if let Ok(EventResult::RepaintNow(window_id)) = event_result {
+                log::info!("RepaintNow of {window_id:?}",);
+                self.windows_next_repaint_times.insert(window_id, now);
 
-                    // Fix flickering on Windows, see https://github.com/emilk/egui/pull/2280
-                    event_result = self.winit_app.run_ui_and_paint(event_loop, window_id);
-                }
-                _ => {}
+                // Fix flickering on Windows, see https://github.com/emilk/egui/pull/2280
+                event_result = self.winit_app.run_ui_and_paint(event_loop, window_id);
             }
         }
 
