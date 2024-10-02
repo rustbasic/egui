@@ -94,28 +94,28 @@ impl<T: WinitApp> WinitAppWrapper<T> {
             }
         }
 
-        let combined_result = event_result.and_then(|event_result| match event_result {
+        let combined_result = event_result.map(|event_result| match event_result {
             EventResult::Wait => {
                 event_loop.set_control_flow(ControlFlow::Wait);
-                Ok(event_result)
+                event_result
             }
             EventResult::RepaintNow(window_id) => {
                 log::trace!("RepaintNow of {window_id:?}",);
                 self.windows_next_repaint_times.insert(window_id, now);
-                Ok(event_result)
+                event_result
             }
             EventResult::RepaintNext(window_id) => {
                 log::trace!("RepaintNext of {window_id:?}",);
                 self.windows_next_repaint_times.insert(window_id, now);
-                Ok(event_result)
+                event_result
             }
             EventResult::RepaintAt(window_id, when) => {
                 self.windows_next_repaint_times.insert(window_id, when);
-                Ok(event_result)
+                event_result
             }
             EventResult::Exit => {
                 exit = true;
-                Ok(event_result)
+                event_result
             }
         });
 
