@@ -77,7 +77,7 @@ impl<T: WinitApp> WinitAppWrapper<T> {
         event_loop: &ActiveEventLoop,
         event_result: Result<EventResult>,
     ) {
-        let now = Instant::now();
+        let mut now = Instant::now();
         let mut exit = false;
 
         log::trace!("event_result: {event_result:?}");
@@ -91,6 +91,8 @@ impl<T: WinitApp> WinitAppWrapper<T> {
 
                 // Fix flickering on Windows, see https://github.com/emilk/egui/pull/2280
                 event_result = self.winit_app.run_ui_and_paint(event_loop, window_id);
+
+                now = Instant::now();
             }
         }
 
