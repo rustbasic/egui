@@ -556,7 +556,7 @@ impl ContextImpl {
     }
 
     /// Load fonts unless already loaded.
-    fn update_fonts_mut(&mut self) {
+    pub(crate) fn update_fonts_mut(&mut self) {
         profiling::function_scope!();
         let input = &self.viewport().input;
         let pixels_per_point = input.pixels_per_point();
@@ -1459,6 +1459,7 @@ impl Context {
     /// HTTPS or localhost). If this method is used outside of a secure context, it will log an
     /// error and do nothing. See <https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts>.
     pub fn copy_text(&self, text: String) {
+        self.output_mut(|o| o.copied_text = text.clone());
         self.send_cmd(crate::OutputCommand::CopyText(text));
     }
 
@@ -1776,22 +1777,8 @@ impl Context {
     pub fn set_fonts(&self, font_definitions: FontDefinitions) {
         profiling::function_scope!();
 
-        let pixels_per_point = self.pixels_per_point();
-
-        let mut update_fonts = true;
-
-        self.read(|ctx| {
-            if let Some(current_fonts) = ctx.fonts.get(&pixels_per_point.into()) {
-                // NOTE: this comparison is expensive since it checks TTF data for equality
-                if current_fonts.lock().fonts.definitions() == &font_definitions {
-                    update_fonts = false; // no need to update
-                }
-            }
-        });
-
-        if update_fonts {
-            self.memory_mut(|mem| mem.new_font_definitions = Some(font_definitions));
-        }
+        self.memory_mut(|mem| mem.new_font_definitions = Some(font_definitions));
+        self.write(|ctx| ctx.update_fonts_mut());
     }
 
     /// Tell `egui` which fonts to use.
