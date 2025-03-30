@@ -129,7 +129,6 @@ pub struct PlatformOutput {
     /// }
     /// # });
     /// ```
-    #[deprecated = "Use `Context::copy_text` or `PlatformOutput::commands` instead"]
     pub copied_text: String,
 
     /// Events that may be useful to e.g. a screen reader.
