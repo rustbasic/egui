@@ -24,6 +24,9 @@ pub struct State {
     /// If set, quickly but smoothly scroll to this target offset.
     offset_target: [Option<ScrollingToTarget>; 2],
 
+    /// The offset value when the `offset_target` is set.
+    offset_target_start: [Option<f32>; 2],
+
     /// Were the scroll bars visible last frame?
     show_scroll: Vec2b,
 
@@ -54,6 +57,7 @@ impl Default for State {
         Self {
             offset: Vec2::ZERO,
             offset_target: Default::default(),
+            offset_target_start: Default::default(),
             show_scroll: Vec2b::FALSE,
             content_is_too_large: Vec2b::FALSE,
             scroll_bar_interaction: Vec2b::FALSE,
@@ -1016,15 +1020,7 @@ impl Prepared {
 
         let content_size = content_ui.min_size();
 
-        let scroll_delta = content_ui
-            .ctx()
-            .pass_state_mut(|state| std::mem::take(&mut state.scroll_delta));
-
         for d in 0..2 {
-            // PassState::scroll_delta is inverted from the way we apply the delta, so we need to negate it.
-            let mut delta = -scroll_delta.0[d];
-            let mut animation = scroll_delta.1;
-
             // We always take both scroll targets regardless of which scroll axes are enabled. This
             // is to avoid them leaking to other scroll areas.
             let scroll_target = content_ui
@@ -1032,6 +1028,17 @@ impl Prepared {
                 .pass_state_mut(|state| state.scroll_target[d].take());
 
             if direction_enabled[d] {
+                let (scroll_delta_0, scroll_delta_1) = content_ui.ctx().pass_state_mut(|state| {
+                    (
+                        std::mem::take(&mut state.scroll_delta.0[d]),
+                        std::mem::take(&mut state.scroll_delta.1),
+                    )
+                });
+
+                // PassState::scroll_delta is inverted from the way we apply the delta, so we need to negate it.
+                let mut delta = -scroll_delta_0;
+                let mut animation = scroll_delta_1;
+
                 if let Some(target) = scroll_target {
                     let pass_state::ScrollTarget {
                         range,
@@ -1074,10 +1081,14 @@ impl Prepared {
 
                     if !animated {
                         state.offset[d] = target_offset;
-                    } else if let Some(animation) = &mut state.offset_target[d] {
+                    } else if let Some(scroll_to_target) = &mut state.offset_target[d] {
                         // For instance: the user is continuously calling `ui.scroll_to_cursor`,
                         // so we don't want to reset the animation, but perhaps update the target:
-                        animation.target_offset = target_offset;
+                        if let Some(offset_target_start) = state.offset_target_start[d].take() {
+                            let new_target_offset = offset_target_start + delta;
+                            scroll_to_target.target_offset +=
+                                scroll_to_target.target_offset - new_target_offset;
+                        }
                     } else {
                         // The further we scroll, the more time we take.
                         let now = ui.input(|i| i.time);
@@ -1087,6 +1098,7 @@ impl Prepared {
                             animation_time_span: (now, now + animation_duration as f64),
                             target_offset,
                         });
+                        state.offset_target_start[d] = Some(state.offset[d]);
                     }
                     ui.ctx().request_repaint();
                 }
@@ -1198,16 +1210,19 @@ impl Prepared {
             // Margin on either side of the scroll bar:
             let inner_margin = show_factor * scroll_style.bar_inner_margin;
             let outer_margin = show_factor * scroll_style.bar_outer_margin;
+            let clip_max = ui.clip_rect().max[1 - d] - ui.spacing().item_spacing[1 - d];
 
             // top/bottom of a horizontal scroll (d==0).
             // left/rigth of a vertical scroll (d==1).
-            let mut cross = if scroll_style.floating {
+            let cross = if scroll_style.floating {
+                let max_cross = outer_rect.max[1 - d].at_most(clip_max) - outer_margin;
+
                 // The bounding rect of a fully visible bar.
                 // When we hover this area, we should show the full bar:
                 let max_bar_rect = if d == 0 {
-                    outer_rect.with_min_y(outer_rect.max.y - outer_margin - scroll_style.bar_width)
+                    outer_rect.with_min_y(max_cross - scroll_style.bar_width)
                 } else {
-                    outer_rect.with_min_x(outer_rect.max.x - outer_margin - scroll_style.bar_width)
+                    outer_rect.with_min_x(max_cross - scroll_style.bar_width)
                 };
 
                 let is_hovering_bar_area = is_hovering_outer_rect
@@ -1224,39 +1239,23 @@ impl Prepared {
                         is_hovering_bar_area_t,
                     );
 
-                let max_cross = outer_rect.max[1 - d] - outer_margin;
                 let min_cross = max_cross - width;
                 Rangef::new(min_cross, max_cross)
             } else {
                 let min_cross = inner_rect.max[1 - d] + inner_margin;
-                let max_cross = outer_rect.max[1 - d] - outer_margin;
+                let max_cross = outer_rect.max[1 - d].at_most(clip_max) - outer_margin;
                 Rangef::new(min_cross, max_cross)
             };
-
-            if ui.clip_rect().max[1 - d] < cross.max + outer_margin {
-                // Move the scrollbar so it is visible. This is needed in some cases.
-                // For instance:
-                // * When we have a vertical-only scroll area in a top level panel,
-                //   and that panel is not wide enough for the contents.
-                // * When one ScrollArea is nested inside another, and the outer
-                //   is scrolled so that the scroll-bars of the inner ScrollArea (us)
-                //   is outside the clip rectangle.
-                // Really this should use the tighter clip_rect that ignores clip_rect_margin, but we don't store that.
-                // clip_rect_margin is quite a hack. It would be nice to get rid of it.
-                let width = cross.max - cross.min;
-                cross.max = ui.clip_rect().max[1 - d] - outer_margin;
-                cross.min = cross.max - width;
-            }
 
             let outer_scroll_bar_rect = if d == 0 {
                 Rect::from_min_max(
                     pos2(scroll_bar_rect.left(), cross.min),
-                    pos2(scroll_bar_rect.right(), cross.max),
+                    pos2(scroll_bar_rect.right(), cross.max + outer_margin),
                 )
             } else {
                 Rect::from_min_max(
                     pos2(cross.min, scroll_bar_rect.top()),
-                    pos2(cross.max, scroll_bar_rect.bottom()),
+                    pos2(cross.max + outer_margin, scroll_bar_rect.bottom()),
                 )
             };
 
