@@ -94,7 +94,7 @@ env_logger = { version = "0.11.8", default-features = false }
 glow = "0.16.0"
 glutin = { version = "0.32.3", default-features = false }
 glutin-winit = { version = "0.5.0", default-features = false }
-home = "0.5.11"
+home = "0.5.9"
 image = { version = "0.25.6", default-features = false }
 js-sys = "0.3.81"
 kittest = { version = "0.2.0", git = "https://github.com/rerun-io/kittest.git" }
@@ -134,7 +134,7 @@ tokio = "1.47.1"
 type-map = "0.5.1"
 unicode_names2 = { version = "2.0.0", default-features = false }
 unicode-segmentation = "1.12.0"
-wasm-bindgen = "=0.2.104"
+wasm-bindgen = "0.2.104" # Keep wasm-bindgen in sync in: setup_web.sh, Cargo.toml, Cargo.lock, rust.yml
 wasm-bindgen-futures = "0.4.54"
 wayland-cursor = { version = "0.31.11", default-features = false }
 web-sys = "0.3.81"
