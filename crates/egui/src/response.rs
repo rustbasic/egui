@@ -14,7 +14,7 @@ use crate::{
 /// It also lets you easily show a tooltip on hover.
 ///
 /// Whenever something gets added to a [`Ui`], a [`Response`] object is returned.
-/// [`ui.add`] returns a [`Response`], as does [`ui.button`], and all similar shortcuts.
+/// [`Ui::add`] returns a [`Response`], as does [`Ui::button`], and all similar shortcuts.
 ///
 /// ⚠️ The `Response` contains a clone of [`Context`], and many methods lock the `Context`.
 /// It can therefore be a deadlock to use `Context` from within a context-locking closures,
@@ -433,7 +433,7 @@ impl Response {
     pub fn drag_motion(&self) -> Vec2 {
         if self.dragged() {
             self.ctx
-                .input(|i| i.pointer.motion().unwrap_or(i.pointer.delta()))
+                .input(|i| i.pointer.motion().unwrap_or_else(|| i.pointer.delta()))
         } else {
             Vec2::ZERO
         }
@@ -472,7 +472,7 @@ impl Response {
     ///
     /// Only returns something if [`Self::contains_pointer`] is true,
     /// the user is drag-dropping something of this type,
-    /// and they released it this frame
+    /// and they released it this frame.
     #[doc(alias = "drag and drop")]
     pub fn dnd_release_payload<Payload: Any + Send + Sync>(&self) -> Option<Arc<Payload>> {
         // NOTE: we use `response.contains_pointer` here instead of `hovered`, because
@@ -761,7 +761,7 @@ impl Response {
     /// # });
     /// ```
     pub fn scroll_to_me(&self, align: Option<Align>) {
-        self.scroll_to_me_animation(align, self.ctx.style().scroll_animation);
+        self.scroll_to_me_animation(align, self.ctx.global_style().scroll_animation);
     }
 
     /// Like [`Self::scroll_to_me`], but allows you to specify the [`crate::style::ScrollAnimation`].

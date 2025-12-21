@@ -66,10 +66,10 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     {
         let ctx = egui::Context::default();
-        let _ = ctx.run(RawInput::default(), |ctx| {
+        let _ = ctx.run_ui(RawInput::default(), |ui| {
             c.bench_function("label &str", |b| {
                 b.iter_batched_ref(
-                    || create_benchmark_ui(ctx),
+                    || create_benchmark_ui(ui),
                     |ui| {
                         ui.label("the quick brown fox jumps over the lazy dog");
                     },
@@ -78,7 +78,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             });
             c.bench_function("label format!", |b| {
                 b.iter_batched_ref(
-                    || create_benchmark_ui(ctx),
+                    || create_benchmark_ui(ui),
                     |ui| {
                         ui.label("the quick brown fox jumps over the lazy dog".to_owned());
                     },
@@ -90,7 +90,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     {
         let ctx = egui::Context::default();
-        let _ = ctx.run(RawInput::default(), |ctx| {
+        let _ = ctx.run_ui(RawInput::default(), |ui| {
             let mut group = c.benchmark_group("button");
 
             // To ensure we have a valid image, let's use the font texture. The size
@@ -99,7 +99,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
             group.bench_function("1_button_text", |b| {
                 b.iter_batched_ref(
-                    || create_benchmark_ui(ctx),
+                    || create_benchmark_ui(ui),
                     |ui| {
                         ui.add(Button::new("Hello World"));
                     },
@@ -108,7 +108,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             });
             group.bench_function("2_button_text_image", |b| {
                 b.iter_batched_ref(
-                    || create_benchmark_ui(ctx),
+                    || create_benchmark_ui(ui),
                     |ui| {
                         ui.add(Button::image_and_text(image, "Hello World"));
                     },
@@ -117,7 +117,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             });
             group.bench_function("3_button_text_image_right_text", |b| {
                 b.iter_batched_ref(
-                    || create_benchmark_ui(ctx),
+                    || create_benchmark_ui(ui),
                     |ui| {
                         ui.add(Button::image_and_text(image, "Hello World").right_text("⏵"));
                     },
@@ -126,7 +126,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             });
             group.bench_function("4_button_italic", |b| {
                 b.iter_batched_ref(
-                    || create_benchmark_ui(ctx),
+                    || create_benchmark_ui(ui),
                     |ui| {
                         ui.add(Button::new(RichText::new("Hello World").italics()));
                     },
@@ -140,19 +140,19 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         let ctx = egui::Context::default();
         ctx.begin_pass(RawInput::default());
 
-        egui::CentralPanel::default().show(&ctx, |ui| {
-            c.bench_function("Painter::rect", |b| {
-                let painter = ui.painter();
-                let rect = ui.max_rect();
-                b.iter(|| {
-                    painter.rect(
-                        rect,
-                        2.0,
-                        egui::Color32::RED,
-                        (1.0, egui::Color32::WHITE),
-                        egui::StrokeKind::Inside,
-                    );
-                });
+        let painter =
+            egui::Painter::new(ctx.clone(), egui::LayerId::background(), ctx.content_rect());
+
+        c.bench_function("Painter::rect", |b| {
+            let rect = painter.clip_rect();
+            b.iter(|| {
+                painter.rect(
+                    rect,
+                    2.0,
+                    egui::Color32::RED,
+                    (1.0, egui::Color32::WHITE),
+                    egui::StrokeKind::Inside,
+                );
             });
         });
 
@@ -161,15 +161,11 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     {
         let pixels_per_point = 1.0;
-        let max_texture_side = 8 * 1024;
         let wrap_width = 512.0;
         let font_id = egui::FontId::default();
         let text_color = egui::Color32::WHITE;
-        let mut fonts = egui::epaint::text::Fonts::new(
-            max_texture_side,
-            egui::epaint::AlphaFromCoverage::default(),
-            egui::FontDefinitions::default(),
-        );
+        let mut fonts =
+            egui::epaint::text::Fonts::new(Default::default(), egui::FontDefinitions::default());
         {
             c.bench_function("text_layout_uncached", |b| {
                 b.iter(|| {
@@ -202,6 +198,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             let mut string = String::new();
             for _ in 0..NUM_LINES {
                 for i in 0..30_u8 {
+                    #[expect(clippy::unwrap_used)]
                     write!(string, "{i:02X} ").unwrap();
                 }
                 string.push('\n');
@@ -209,7 +206,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
             let mut rng = rand::rng();
             b.iter(|| {
-                fonts.begin_pass(max_texture_side, egui::epaint::AlphaFromCoverage::default());
+                fonts.begin_pass(egui::epaint::TextOptions::default());
 
                 // Delete a random character, simulating a user making an edit in a long file:
                 let mut new_string = string.clone();
