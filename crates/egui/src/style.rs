@@ -1234,6 +1234,11 @@ pub struct WidgetVisuals {
     pub fg_stroke: Stroke,
 
     /// Make the frame this much larger.
+    ///
+    /// The problem with "expanding" widgets is that they now want to paint outside their own bounds,
+    /// which then requires all parent UIs to have proper margins.
+    ///
+    /// It also means hovered things are no longer properly aligned with every other widget.
     pub expansion: f32,
 }
 
@@ -1392,7 +1397,7 @@ impl Default for Interaction {
     fn default() -> Self {
         Self {
             interact_radius: 5.0,
-            resize_grab_radius_side: 5.0,
+            resize_grab_radius_side: 3.0,
             resize_grab_radius_corner: 10.0,
             show_tooltips_only_when_still: true,
             tooltip_delay: 0.5,
@@ -1568,7 +1573,7 @@ impl Widgets {
                 bg_stroke: Stroke::new(1.0, Color32::from_gray(150)), // e.g. hover over window edge or button
                 fg_stroke: Stroke::new(1.5, Color32::from_gray(240)),
                 corner_radius: CornerRadius::same(3),
-                expansion: 1.0,
+                expansion: 0.0,
             },
             active: WidgetVisuals {
                 weak_bg_fill: Color32::from_gray(55),
@@ -1576,7 +1581,7 @@ impl Widgets {
                 bg_stroke: Stroke::new(1.0, Color32::WHITE),
                 fg_stroke: Stroke::new(2.0, Color32::WHITE),
                 corner_radius: CornerRadius::same(2),
-                expansion: 1.0,
+                expansion: 0.0,
             },
             open: WidgetVisuals {
                 weak_bg_fill: Color32::from_gray(45),
@@ -1613,7 +1618,7 @@ impl Widgets {
                 bg_stroke: Stroke::new(1.0, Color32::from_gray(105)), // e.g. hover over window edge or button
                 fg_stroke: Stroke::new(1.5, Color32::BLACK),
                 corner_radius: CornerRadius::same(3),
-                expansion: 1.0,
+                expansion: 0.0,
             },
             active: WidgetVisuals {
                 weak_bg_fill: Color32::from_gray(165),
@@ -1621,7 +1626,7 @@ impl Widgets {
                 bg_stroke: Stroke::new(1.0, Color32::BLACK),
                 fg_stroke: Stroke::new(2.0, Color32::BLACK),
                 corner_radius: CornerRadius::same(2),
-                expansion: 1.0,
+                expansion: 0.0,
             },
             open: WidgetVisuals {
                 weak_bg_fill: Color32::from_gray(220),
