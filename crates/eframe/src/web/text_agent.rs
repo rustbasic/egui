@@ -145,8 +145,7 @@ impl TextAgent {
 
         let style = self.input.style();
 
-        // Retrieve canvas height and clamp the input's 'top' position
-        // to stay within the canvas's visible bounds, preventing unwanted browser scrolling.
+        // Clamp the input position within the canvas height to prevent unwanted browser scrolling.
         let canvas_height = canvas.height() as f32;
         let visible_y = cursor_rect.center().y * zoom_factor;
         let clamped_y = visible_y.clamp(0.0, canvas_height);
@@ -156,10 +155,7 @@ impl TextAgent {
             "left",
             &format!("{}px", cursor_rect.center().x * zoom_factor),
         )?;
-        style.set_property(
-            "top",
-            &format!("{}px", clamped_y),
-        )?;
+        style.set_property("top", &format!("{}px", clamped_y))?;                                                       
 
         Ok(())
     }
