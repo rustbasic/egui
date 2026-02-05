@@ -155,7 +155,7 @@ impl TextAgent {
             "left",
             &format!("{}px", cursor_rect.center().x * zoom_factor),
         )?;
-        style.set_property("top", &format!("{}px", clamped_y))?;                                                       
+        style.set_property("top", &format!("{}px", clamped_y))?;
 
         Ok(())
     }
