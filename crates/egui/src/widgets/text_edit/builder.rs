@@ -1103,8 +1103,8 @@ fn events(
                             let start_cursor = ccursor;
                             if !text_mark.is_empty() {
                                 text.insert_text_at(&mut ccursor, text_mark, char_limit);
+                                state.ime_cursor_range = cursor_range;
                             }
-                            state.ime_cursor_range = cursor_range;
                             Some(CCursorRange::two(start_cursor, ccursor))
                         }
                     }
@@ -1112,14 +1112,13 @@ fn events(
                         if prediction == "\n" || prediction == "\r" {
                             None
                         } else {
-                            state.ime_enabled = false;
+                            let mut ccursor = cursor_range.secondary;
 
-                            let mut ccursor = clear_prediction(text, &cursor_range);
-
-                            if !prediction.is_empty()
-                                && cursor_range.secondary.index
-                                    == state.ime_cursor_range.secondary.index
+                            if state.ime_enabled
+                                && !prediction.is_empty()
+                                && cursor_range.secondary.index == state.ime_cursor_range.secondary.index
                             {
+                                ccursor = clear_prediction(text, cursor_range);
                                 text.insert_text_at(&mut ccursor, prediction, char_limit);
                             }
 
