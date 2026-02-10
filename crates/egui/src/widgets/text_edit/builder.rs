@@ -1118,7 +1118,7 @@ fn events(
                                 && !prediction.is_empty()
                                 && cursor_range.secondary.index == state.ime_cursor_range.secondary.index
                             {
-                                ccursor = clear_prediction(text, cursor_range);
+                                ccursor = clear_prediction(text, &cursor_range);
                                 text.insert_text_at(&mut ccursor, prediction, char_limit);
                             }
 
