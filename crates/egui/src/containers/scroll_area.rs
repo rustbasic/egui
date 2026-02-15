@@ -1103,8 +1103,8 @@ impl Prepared {
                         0.0
                     };
 
-                    animation = animation_update;
                     delta += delta_update;
+                    animation = animation_update;
                 }
 
                 if delta != 0.0 {
