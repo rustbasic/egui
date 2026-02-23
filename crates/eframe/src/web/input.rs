@@ -120,12 +120,12 @@ fn handle_touch_zoom(runner: &mut AppRunner, event: &web_sys::TouchEvent) {
         let initial_dist = *runner.input.initial_touch_dist.get_or_insert(current_dist);
 
         if initial_dist > 0.0 {
-            let raw_scale = current_dist / initial_dist;
-            let new_scale = (raw_scale * 10.0).round() / 10.0;
+            let total_scale = current_dist / initial_dist;
+            let scale_delta = total_scale / runner.input.accumulated_scale;
 
-            if new_scale != runner.input.accumulated_scale {
-                runner.input.accumulated_scale = new_scale;
-                runner.input.raw.events.push(egui::Event::Zoom(new_scale));
+            if (scale_delta - 1.0).abs() > 0.0001 {
+                runner.input.accumulated_scale = total_scale;
+                runner.input.raw.events.push(egui::Event::Zoom(scale_delta));
             }
         }
     } else {
