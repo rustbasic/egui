@@ -319,7 +319,7 @@ impl<T: WinitApp> ApplicationHandler<UserEvent> for WinitAppWrapper<T> {
                     self.winit_app.run_ui_and_paint(event_loop, window_id)
                 }
                 winit::event::WindowEvent::KeyboardInput {
-                    event: ref key_event,
+                    event: &key_event,
                     ..
                 } => {
                     let is_tab = matches!(
