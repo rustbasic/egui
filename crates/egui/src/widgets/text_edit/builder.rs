@@ -992,6 +992,14 @@ fn events(
 
     let mut events = ui.input(|i| i.filtered_events(&event_filter));
 
+    let wants_ime_events = ui.memory(|mem| mem.had_focus_last_frame(id));
+
+    if state.ime_enabled {
+        remove_ime_incompatible_events(&mut events);
+        // Process IME events first:
+        events.sort_by_key(|e| !matches!(e, Event::Ime(_)));
+    }
+
     if state.ime_enabled {
         remove_ime_incompatible_events(&mut events);
         // Process IME events first:
@@ -1125,7 +1133,7 @@ fn events(
                 ..
             } => check_for_mutating_key_press(os, &cursor_range, text, galley, modifiers, *key),
 
-            Event::Ime(ime_event) => {
+            Event::Ime(ime_event) if wants_ime_events => {
                 /// Both `ImeEvent::Preedit("")` and `ImeEvent::Commit("")`
                 /// might be emitted from different integrations to signify that
                 /// the current IME composition should be cleared.
