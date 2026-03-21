@@ -1000,12 +1000,6 @@ fn events(
         events.sort_by_key(|e| !matches!(e, Event::Ime(_)));
     }
 
-    if state.ime_enabled {
-        remove_ime_incompatible_events(&mut events);
-        // Process IME events first:
-        events.sort_by_key(|e| !matches!(e, Event::Ime(_)));
-    }
-
     for event in &events {
         let did_mutate_text = match event {
             // First handle events that only changes the selection cursor, not the text:
