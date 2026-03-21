@@ -70,6 +70,7 @@ struct WinitAppWrapper<T: WinitApp> {
     winit_app: T,
     return_result: Result<(), crate::Error>,
     run_and_return: bool,
+    is_ime_just_disabled: bool,
 }
 
 impl<T: WinitApp> WinitAppWrapper<T> {
@@ -79,6 +80,7 @@ impl<T: WinitApp> WinitAppWrapper<T> {
             winit_app,
             return_result: Ok(()),
             run_and_return,
+            is_ime_just_disabled: false,
         }
     }
 
@@ -308,7 +310,27 @@ impl<T: WinitApp> ApplicationHandler<UserEvent> for WinitAppWrapper<T> {
         event_loop_context::with_event_loop_context(event_loop, move || {
             let event_result = match event {
                 winit::event::WindowEvent::RedrawRequested => {
+                    self.is_ime_just_disabled = false;
                     self.winit_app.run_ui_and_paint(event_loop, window_id)
+                }
+                winit::event::WindowEvent::Ime(winit::event::Ime::Disabled) => {
+                    self.is_ime_just_disabled = true;
+                    let _ = self.winit_app.window_event(event_loop, window_id, event);
+                    self.winit_app.run_ui_and_paint(event_loop, window_id)
+                }
+                winit::event::WindowEvent::KeyboardInput {
+                    event: ref key_event,
+                    ..
+                } => {
+                    let is_tab = matches!(
+                        key_event.logical_key,
+                        winit::keyboard::Key::Named(winit::keyboard::NamedKey::Tab)
+                    );
+                    if is_tab && self.is_ime_just_disabled {
+                        Ok(EventResult::Wait)
+                    } else {
+                        self.winit_app.window_event(event_loop, window_id, event)
+                    }
                 }
                 _ => self.winit_app.window_event(event_loop, window_id, event),
             };
