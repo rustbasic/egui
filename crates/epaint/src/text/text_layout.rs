@@ -975,7 +975,7 @@ fn galley_from_rows(
             glyph.pos.y = glyph.font_face_ascent
 
                 // Apply valign to the different in height of the entire row, and the height of this `Font`:
-                + format.valign.to_factor() * (max_row_height - glyph.line_height)
+                + format.valign.to_factor() * (max_row_height - glyph.font_face_height)
 
                 // When mixing different `FontImpl` (e.g. latin and emojis),
                 // we always center the difference:

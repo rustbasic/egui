@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use emath::{Rect, TSTransform};
-use epaint::text::{Galley, LayoutJob, TextWrapMode, cursor::CCursor};
+use epaint::text::{Galley, LayoutJob, TextFormat, TextWrapping, TextWrapMode, cursor::CCursor};
 
 use crate::{
     Align, Align2, AsIdSalt, AtomExt as _, AtomKind, AtomLayout, Atoms, Color32, Context,
@@ -470,6 +470,7 @@ impl TextEdit<'_> {
 
         let font_id = font_selection.resolve(ui.style());
         let row_height = ui.fonts_mut(|f| f.row_height(&font_id));
+        let line_height = row_height + ui.spacing().text_line_spacing;
         const MIN_WIDTH: f32 = 24.0; // Never make a [`TextEdit`] more narrow than this.
         let available_width = ui.available_width().at_least(MIN_WIDTH);
         let desired_width = desired_width
@@ -481,7 +482,7 @@ impl TextEdit<'_> {
         let mut default_layouter = move |ui: &Ui, text: &dyn TextBuffer, wrap_width: f32| {
             let text = mask_if_password(password, text.as_str());
             let mut layout_job = if multiline {
-                LayoutJob::simple(text, font_id_clone.clone(), text_color, wrap_width)
+                { let mut job = LayoutJob::simple_format(text, TextFormat { font_id: font_id_clone.clone(), color: text_color, line_height: Some(line_height), ..Default::default() }); job.wrap = TextWrapping { max_width: wrap_width, ..Default::default() }; job }
             } else {
                 LayoutJob::simple_singleline(text, font_id_clone.clone(), text_color)
             };
@@ -876,9 +877,11 @@ impl TextEdit<'_> {
                             .layer_transform_to_global(ui.layer_id())
                             .unwrap_or_default();
                         ui.output_mut(|o| {
+                            let tiny_rect =
+                                Rect::from_min_size(primary_cursor_rect.left_top(), Vec2::ZERO);
                             o.ime = Some(crate::output::IMEOutput {
                                 rect: to_global * inner_rect,
-                                cursor_rect: to_global * primary_cursor_rect,
+                                cursor_rect: to_global * tiny_rect,
                                 should_interrupt_composition: false,
                             });
                         });

@@ -254,6 +254,8 @@ impl AppRunner {
     pub fn logic(&mut self) {
         // We sometimes miss blur/focus events due to the text agent, so let's just poll each frame:
         self.update_focus();
+        #[cfg(debug_assertions)]
+        self.text_agent.update_custom_debug_information(&mut self.input);
         // We might have received a screenshot
         self.painter.handle_screenshots(&mut self.input.raw.events);
 

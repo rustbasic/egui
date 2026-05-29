@@ -750,14 +750,16 @@ impl WidgetText {
                     .visuals
                     .override_text_color
                     .unwrap_or(crate::Color32::PLACEHOLDER);
+                let font_id = FontSelection::default().resolve_with_fallback(style, fallback_font);
+                let row_height = ctx.fonts_mut(|f| f.row_height(&font_id));
                 let mut layout_job = LayoutJob::simple_format(
                     text,
                     TextFormat {
                         // We want the style overrides to take precedence over the fallback font
-                        font_id: FontSelection::default()
-                            .resolve_with_fallback(style, fallback_font),
+                        font_id,
                         color,
                         valign: default_valign,
+                        line_height: Some(row_height + style.spacing.text_line_spacing),
                         ..Default::default()
                     },
                 );

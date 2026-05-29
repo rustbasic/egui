@@ -460,6 +460,7 @@ pub struct Spacing {
 
     /// Controls the spacing of a [`crate::ScrollArea`].
     pub scroll: ScrollStyle,
+    pub text_line_spacing: f32,
 }
 
 impl Spacing {
@@ -1432,6 +1433,7 @@ impl Default for Spacing {
             default_area_size: vec2(600.0, 400.0),
             tooltip_width: 500.0,
             menu_width: 400.0,
+            text_line_spacing: 0.0,
             menu_spacing: 2.0,
             combo_height: 200.0,
             scroll: Default::default(),
@@ -1881,7 +1883,7 @@ impl Spacing {
             indent_ends_with_horizontal_line,
             combo_height,
             scroll,
-        } = self;
+        .. } = self;
 
         Grid::new("spacing")
             .num_columns(2)
