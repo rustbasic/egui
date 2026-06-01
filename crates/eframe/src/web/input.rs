@@ -124,8 +124,12 @@ pub fn text_from_keyboard_event(event: &web_sys::KeyboardEvent) -> Option<String
       | "Esc"
       | "Escape"
       | "GroupNext" // https://github.com/emilk/egui/issues/510
+      | "HangulMode"
+      | "HanjaMode"
       | "Help"
       | "Home"
+      | "KanaMode"
+      | "KanjiMode"
       | "Insert"
       | "Meta"
       | "NumLock"
