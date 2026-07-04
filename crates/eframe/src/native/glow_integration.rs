@@ -681,11 +681,19 @@ impl GlowWinitRunning<'_> {
         };
 
         viewport.info.events.clear(); // they should have been processed
-        let window = viewport.window.clone().unwrap();
-        let gl_surface = viewport.gl_surface.as_ref().unwrap();
-        let egui_winit = viewport.egui_winit.as_mut().unwrap();
+        // let window = viewport.window.clone().unwrap();
+        // let gl_surface = viewport.gl_surface.as_ref().unwrap();
+        // let egui_winit = viewport.egui_winit.as_mut().unwrap();
+        let (Some(egui_winit), Some(window), Some(gl_surface)) = (
+            viewport.egui_winit.as_mut(),
+            &viewport.window.clone(),
+            &viewport.gl_surface,
+        ) else {
+            log::warn!("viewport unwrap error.");
+            return Ok(EventResult::Wait);
+        };
 
-        egui_winit.handle_platform_output_with_event_loop(&window, event_loop, platform_output);
+        egui_winit.handle_platform_output_with_event_loop(window, event_loop, platform_output);
 
         // Upload textures even when not visible: the atlas dirty region is already
         // consumed, so dropping the delta would desync the font texture.
@@ -746,7 +754,7 @@ impl GlowWinitRunning<'_> {
                     }
                 }
 
-                integration.post_rendering(&window);
+                integration.post_rendering(window);
             }
 
             {
@@ -781,7 +789,7 @@ impl GlowWinitRunning<'_> {
 
         integration.report_frame_time(frame_timer.total_time_sec()); // don't count auto-save time as part of regular frame time
 
-        integration.maybe_autosave(app.as_mut(), Some(&window));
+        integration.maybe_autosave(app.as_mut(), Some(window));
 
         if is_invisible_or_minimized(&window) {
             // On Mac, a minimized Window uses up all CPU:
@@ -840,6 +848,13 @@ impl GlowWinitRunning<'_> {
                 if let Some(viewport_id) = viewport_id {
                     if focused {
                         glutin.focused_viewport = Some(viewport_id);
+
+                        if let Some(viewport) = glutin.viewports.get_mut(&viewport_id) {
+                            // A focused window cannot be reliably treated as fully occluded.
+                            // On some platforms/drivers the matching Occluded(false) event may be missed,
+                            // so clear a stale occluded state on strong visibility signals.
+                            viewport.info.occluded = Some(false);
+                        }
                     } else if glutin.focused_viewport == Some(viewport_id) {
                         // Only clear the focused viewport if the viewport losing focus is
                         // the one we currently believe to be focused. This avoids stale
@@ -860,6 +875,13 @@ impl GlowWinitRunning<'_> {
                     && let Some(viewport_id) = viewport_id
                 {
                     repaint_asap = true;
+
+                    if let Some(viewport) = glutin.viewports.get_mut(&viewport_id) {
+                        // A non-zero resize is a strong signal that the window is visible enough
+                        // to render. Clear a stale occluded state in case Occluded(false) was missed.
+                        viewport.info.occluded = Some(false);
+                    }
+
                     glutin.resize(viewport_id, *physical_size);
                 }
             }
@@ -871,9 +893,7 @@ impl GlowWinitRunning<'_> {
                     viewport.info.occluded = Some(*is_occluded);
                 }
 
-                if !*is_occluded {
-                    repaint_asap = true;
-                }
+                repaint_asap = true;
             }
 
             winit::event::WindowEvent::CloseRequested => {
