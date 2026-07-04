@@ -788,7 +788,7 @@ impl GlowWinitRunning<'_> {
 
         integration.maybe_autosave(app.as_mut(), Some(window));
 
-        if is_invisible_or_minimized(&window) {
+        if is_invisible_or_minimized(window) {
             // On Mac, a minimized Window uses up all CPU:
             // https://github.com/emilk/egui/issues/325
             // On Windows, an invisible window also uses up all CPU:
