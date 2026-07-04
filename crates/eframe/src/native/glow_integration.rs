@@ -681,9 +681,6 @@ impl GlowWinitRunning<'_> {
         };
 
         viewport.info.events.clear(); // they should have been processed
-        // let window = viewport.window.clone().unwrap();
-        // let gl_surface = viewport.gl_surface.as_ref().unwrap();
-        // let egui_winit = viewport.egui_winit.as_mut().unwrap();
         let (Some(egui_winit), Some(window), Some(gl_surface)) = (
             viewport.egui_winit.as_mut(),
             &viewport.window.clone(),
