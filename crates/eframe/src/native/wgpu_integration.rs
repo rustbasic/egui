@@ -646,6 +646,7 @@ impl WgpuWinitRunning<'_> {
             egui_winit::update_viewport_info(info, &integration.egui_ctx, window, false);
 
             let is_visible = viewport.info.visible().unwrap_or(true);
+            let is_visible_for_paint = is_visible || viewport.info.focused == Some(true);
 
             {
                 profiling::scope!("set_window");
@@ -669,7 +670,7 @@ impl WgpuWinitRunning<'_> {
 
             painter.handle_screenshots(&mut raw_input.events);
 
-            (viewport_ui_cb, raw_input, is_visible, run_ui)
+            (viewport_ui_cb, raw_input, is_visible_for_paint, run_ui)
         };
 
         // ------------------------------------------------------------
