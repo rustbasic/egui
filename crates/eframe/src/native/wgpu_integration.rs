@@ -915,12 +915,12 @@ impl WgpuWinitRunning<'_> {
                     shared.painter.on_window_resized(id, width, height);
                     repaint_asap = true;
 
-                    if let Some(viewport_id) = viewport_id {
-                        if let Some(viewport) = shared.viewports.get_mut(&viewport_id) {
-                            // A non-zero resize is a strong signal that the window is visible enough
-                            // to render. Clear a stale occluded state in case Occluded(false) was missed.
-                            viewport.info.occluded = Some(false);
-                        }
+                    if let Some(viewport_id) = viewport_id
+                        && let Some(viewport) = shared.viewports.get_mut(&viewport_id)
+                    {
+                        // A non-zero resize is a strong signal that the window is visible enough
+                        // to render. Clear a stale occluded state in case Occluded(false) was missed.
+                        viewport.info.occluded = Some(false);
                     }
                 }
             }
