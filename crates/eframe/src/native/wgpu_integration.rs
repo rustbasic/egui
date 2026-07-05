@@ -881,13 +881,11 @@ impl WgpuWinitRunning<'_> {
                     if focused {
                         shared.focused_viewport = Some(viewport_id);
 
-                        if let Some(viewport_id) = viewport_id {
-                            if let Some(viewport) = shared.viewports.get_mut(&viewport_id) {
-                                // A focused window cannot be reliably treated as fully occluded.
-                                // On some platforms/drivers the matching Occluded(false) event may be missed,
-                                // so clear a stale occluded state on strong visibility signals.
-                                viewport.info.occluded = Some(false);
-                            }
+                        if let Some(viewport) = shared.viewports.get_mut(&viewport_id) {
+                            // A focused window cannot be reliably treated as fully occluded.
+                            // On some platforms/drivers the matching Occluded(false) event may be missed,
+                            // so clear a stale occluded state on strong visibility signals.
+                            viewport.info.occluded = Some(false);
                         }
                     } else if shared.focused_viewport == Some(viewport_id) {
                         // Only clear the focused viewport if the viewport losing focus is
