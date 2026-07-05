@@ -569,6 +569,7 @@ impl GlowWinitRunning<'_> {
             egui_winit::update_viewport_info(&mut viewport.info, &egui_ctx, window, false);
 
             let is_visible = viewport.info.visible().unwrap_or(true);
+            let is_visible_for_paint = is_visible || viewport.info.focused == Some(true);
 
             let Some(egui_winit) = viewport.egui_winit.as_mut() else {
                 return Ok(EventResult::Wait);
@@ -588,7 +589,7 @@ impl GlowWinitRunning<'_> {
                 .map(|(id, viewport)| (*id, viewport.info.clone()))
                 .collect();
 
-            (raw_input, viewport_ui_cb, is_visible, run_ui)
+            (raw_input, viewport_ui_cb, is_visible_for_paint, run_ui)
         };
 
         // HACK: In order to get the right clear_color, the system theme needs to be set, which
