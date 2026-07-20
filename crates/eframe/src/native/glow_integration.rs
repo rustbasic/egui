@@ -569,6 +569,7 @@ impl GlowWinitRunning<'_> {
             egui_winit::update_viewport_info(&mut viewport.info, &egui_ctx, window, false);
 
             let is_visible = viewport.info.visible().unwrap_or(true);
+            // let is_visible_for_paint = is_visible || viewport.info.focused == Some(true);
 
             let Some(egui_winit) = viewport.egui_winit.as_mut() else {
                 return Ok(EventResult::Wait);
@@ -646,6 +647,25 @@ impl GlowWinitRunning<'_> {
             run_ui,
         );
 
+        let (debug_key_pressed, force_recreate_gl_backend) = self.integration.egui_ctx.input(|i| {
+            let f7_pressed = i.key_pressed(egui::Key::F7);
+            (f7_pressed, f7_pressed)
+        });
+
+        if debug_key_pressed {
+            let frames = self.integration.egui_ctx.cumulative_frame_nr();
+            let passes = self.integration.egui_ctx.cumulative_pass_nr();
+
+            log::warn!(
+                "glow debug key after update: viewport_id={viewport_id:?}, frames={frames}, passes={passes}, delta={}, run_ui={run_ui}, paint_gate={is_visible}, shapes={}, texture_set={}, texture_free={}, force_recreate={force_recreate_gl_backend}",
+                passes.saturating_sub(frames),
+                full_output.shapes.len(),
+                full_output.textures_delta.set.len(),
+                full_output.textures_delta.free.len(),
+            );
+
+            self.integration.egui_ctx.request_repaint();
+        }
         // ------------------------------------------------------------
 
         let Self {
@@ -681,11 +701,16 @@ impl GlowWinitRunning<'_> {
         };
 
         viewport.info.events.clear(); // they should have been processed
-        let window = viewport.window.clone().unwrap();
-        let gl_surface = viewport.gl_surface.as_ref().unwrap();
-        let egui_winit = viewport.egui_winit.as_mut().unwrap();
+        let (Some(egui_winit), Some(window), Some(gl_surface)) = (
+            viewport.egui_winit.as_mut(),
+            &viewport.window.clone(),
+            &viewport.gl_surface,
+        ) else {
+            log::warn!("viewport unwrap error.");
+            return Ok(EventResult::Wait);
+        };
 
-        egui_winit.handle_platform_output_with_event_loop(&window, event_loop, platform_output);
+        egui_winit.handle_platform_output_with_event_loop(window, event_loop, platform_output);
 
         // Upload textures even when not visible: the atlas dirty region is already
         // consumed, so dropping the delta would desync the font texture.
@@ -705,6 +730,16 @@ impl GlowWinitRunning<'_> {
             let clipped_primitives = integration.egui_ctx.tessellate(shapes, pixels_per_point);
 
             let screen_size_in_pixels: [u32; 2] = window.inner_size().into();
+
+            let frames = integration.egui_ctx.cumulative_frame_nr();
+            let automatic_framebuffer_probe_due = viewport_id == ViewportId::ROOT
+                && frames > 0
+                && frames % 120 == 0;
+
+            if automatic_framebuffer_probe_due {
+                default_framebuffer_clear_readback_probe(painter.gl());
+                painter.clear(screen_size_in_pixels, clear_color);
+            }
 
             if !clear_before_update {
                 painter.clear(screen_size_in_pixels, clear_color);
@@ -746,7 +781,7 @@ impl GlowWinitRunning<'_> {
                     }
                 }
 
-                integration.post_rendering(&window);
+                integration.post_rendering(window);
             }
 
             {
@@ -759,7 +794,11 @@ impl GlowWinitRunning<'_> {
                     )
                 })?;
 
-                gl_surface.swap_buffers(context)?;
+                let swap_result = gl_surface.swap_buffers(context);
+                if let Err(swap_result) = swap_result {
+                    log::error!("{swap_result}")
+                }
+
                 frame_timer.resume();
             }
 
@@ -770,6 +809,8 @@ impl GlowWinitRunning<'_> {
             {
                 save_screenshot_and_exit(&path, &painter, screen_size_in_pixels);
             }
+        } else {
+            // painter.update_textures(&textures_delta);
         }
 
         // Free textures *after* painting, since they may still be used in the frame we just drew.
@@ -781,9 +822,9 @@ impl GlowWinitRunning<'_> {
 
         integration.report_frame_time(frame_timer.total_time_sec()); // don't count auto-save time as part of regular frame time
 
-        integration.maybe_autosave(app.as_mut(), Some(&window));
+        integration.maybe_autosave(app.as_mut(), Some(window));
 
-        if is_invisible_or_minimized(&window) {
+        if is_invisible_or_minimized(window) {
             // On Mac, a minimized Window uses up all CPU:
             // https://github.com/emilk/egui/issues/325
             // On Windows, an invisible window also uses up all CPU:
@@ -837,7 +878,25 @@ impl GlowWinitRunning<'_> {
                     *focused
                 };
 
-                glutin.focused_viewport = focused.then_some(viewport_id).flatten();
+                if let Some(viewport_id) = viewport_id {
+                    if focused {
+                        glutin.focused_viewport = Some(viewport_id);
+
+                        if let Some(viewport) = glutin.viewports.get_mut(&viewport_id) {
+                            // A focused window cannot be reliably treated as fully occluded.
+                            // On some platforms/drivers the matching Occluded(false) event may be missed,
+                            // so clear a stale occluded state on strong visibility signals.
+                            viewport.info.occluded = Some(false);
+                        }
+                    } else if glutin.focused_viewport == Some(viewport_id) {
+                        // Only clear the focused viewport if the viewport losing focus is
+                        // the one we currently believe to be focused. This avoids stale
+                        // Focused(false) events from other windows clearing a valid focus.
+                        glutin.focused_viewport = None;
+                    }
+                }
+
+                repaint_asap = true;
             }
 
             winit::event::WindowEvent::Resized(physical_size) => {
@@ -849,6 +908,13 @@ impl GlowWinitRunning<'_> {
                     && let Some(viewport_id) = viewport_id
                 {
                     repaint_asap = true;
+
+                    if let Some(viewport) = glutin.viewports.get_mut(&viewport_id) {
+                        // A non-zero resize is a strong signal that the window is visible enough
+                        // to render. Clear a stale occluded state in case Occluded(false) was missed.
+                        viewport.info.occluded = Some(false);
+                    }
+
                     glutin.resize(viewport_id, *physical_size);
                 }
             }
@@ -859,6 +925,8 @@ impl GlowWinitRunning<'_> {
                 {
                     viewport.info.occluded = Some(*is_occluded);
                 }
+
+                repaint_asap = true;
             }
 
             winit::event::WindowEvent::CloseRequested => {
@@ -957,6 +1025,62 @@ fn change_gl_context(
 
     profiling::scope!("make_current");
     *current_gl_context = Some(not_current.make_current(gl_surface).unwrap());
+}
+
+#[expect(unsafe_code)]
+fn default_framebuffer_clear_readback_probe(
+    gl: &glow::Context,
+) {
+    /*
+    unsafe {
+        use glow::HasContext as _;
+
+        gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+        gl.disable(glow::SCISSOR_TEST);
+        gl.color_mask(true, true, true, true);
+        gl.viewport(
+            0,
+            0,
+            screen_size_in_pixels[0] as i32,
+            screen_size_in_pixels[1] as i32,
+        );
+
+        gl.draw_buffer(glow::BACK);
+        gl.read_buffer(glow::BACK);
+
+        gl.clear_color(1.0, 0.0, 1.0, 1.0);
+        gl.clear(glow::COLOR_BUFFER_BIT);
+
+        let mut pixel = [0_u8; 4];
+
+        gl.read_pixels(
+            screen_size_in_pixels[0] as i32 / 2,
+            screen_size_in_pixels[1] as i32 / 2,
+            1,
+            1,
+            glow::RGBA,
+            glow::UNSIGNED_BYTE,
+            glow::PixelPackData::Slice(Some(&mut pixel)),
+        );
+
+        let gl_error = gl.get_error();
+        let ok = gl_error == glow::NO_ERROR && pixel[0] > 200 && pixel[1] < 50 && pixel[2] > 200;
+
+        DefaultFramebufferProbeResult {
+            pixel,
+            gl_error,
+            ok,
+        }
+    }
+    */
+
+    unsafe {
+        use glow::HasContext as _;
+
+        // gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+        gl.draw_buffer(glow::BACK);
+        // gl.read_buffer(glow::BACK);
+    }
 }
 
 impl GlutinWindowContext {
