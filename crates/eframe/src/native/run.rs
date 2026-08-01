@@ -1,4 +1,7 @@
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashSet,
+    time::{Duration, Instant},
+};
 
 use winit::{
     application::ApplicationHandler,
@@ -8,7 +11,7 @@ use winit::{
 
 use ahash::HashMap;
 
-use super::winit_integration::{UserEvent, WinitApp};
+use super::winit_integration::{UserEvent, ViewportWindowKind, WinitApp};
 use crate::{
     Result, epi,
     native::{
@@ -78,6 +81,12 @@ fn with_event_loop<R>(
 /// some events, but otherwise forwards events to the [`WinitApp`].
 struct WinitAppWrapper<T: WinitApp> {
     windows_next_repaint_times: HashMap<WindowId, Instant>,
+
+    // Diagnostic guard:
+    // Avoid requesting another redraw for the same window while a previous
+    // request_redraw is still waiting for WindowEvent::RedrawRequested.
+    windows_pending_redraw: HashSet<WindowId>,
+
     winit_app: T,
     return_result: Result<(), crate::Error>,
     run_and_return: bool,
@@ -87,6 +96,7 @@ impl<T: WinitApp> WinitAppWrapper<T> {
     fn new(winit_app: T, run_and_return: bool) -> Self {
         Self {
             windows_next_repaint_times: HashMap::default(),
+            windows_pending_redraw: HashSet::default(),
             winit_app,
             return_result: Ok(()),
             run_and_return,
@@ -111,6 +121,8 @@ impl<T: WinitApp> WinitAppWrapper<T> {
             log::trace!("RepaintNow of {window_id:?}");
             self.windows_next_repaint_times
                 .insert(window_id, Instant::now());
+
+            self.clear_pending_redraw_before_paint(&window_id);
 
             // Fix flickering on Windows, see https://github.com/emilk/egui/pull/2280
             event_result = self.winit_app.run_ui_and_paint(event_loop, window_id);
@@ -203,14 +215,22 @@ impl<T: WinitApp> WinitAppWrapper<T> {
                     // directly below.
                     // See: https://github.com/emilk/egui/issues/5229
                     if is_invisible_or_minimized(&window) {
+                        // A hidden/minimized window may never deliver the pending
+                        // RedrawRequested event. We paint it directly below, so clear
+                        // the pending redraw guard for this window.
+                        self.windows_pending_redraw.remove(window_id);
                         invisible_window_ids.push(*window_id);
-                    } else {
+                    } else if self.windows_pending_redraw.insert(*window_id) {
                         log::trace!("request_redraw for {window_id:?}");
-                        event_loop.set_control_flow(ControlFlow::Poll);
                         window.request_redraw();
+                    } else {
+                        log::trace!(
+                            "skip request_redraw for {window_id:?}: redraw already pending"
+                        );
                     }
                 } else {
                     log::trace!("No window found for {window_id:?}");
+                    self.windows_pending_redraw.remove(window_id);
                 }
                 false
             });
@@ -219,6 +239,8 @@ impl<T: WinitApp> WinitAppWrapper<T> {
         // RedrawRequested events on Windows. This ensures that viewport
         // commands like Visible(true) are still processed.
         for window_id in &invisible_window_ids {
+            self.clear_pending_redraw_before_paint(window_id);
+
             let event_result = self.winit_app.run_ui_and_paint(event_loop, *window_id);
             self.handle_event_result(event_loop, event_result);
         }
@@ -237,8 +259,24 @@ impl<T: WinitApp> WinitAppWrapper<T> {
         }
 
         let next_repaint_time = self.windows_next_repaint_times.values().min().copied();
-        if let Some(next_repaint_time) = next_repaint_time {
-            event_loop.set_control_flow(ControlFlow::WaitUntil(next_repaint_time));
+        event_loop.set_control_flow(match next_repaint_time {
+            Some(next_repaint_time) => ControlFlow::WaitUntil(next_repaint_time),
+            None => ControlFlow::Wait,
+        });
+    }
+
+    fn clear_pending_redraw_before_paint(&mut self, window_id: &WindowId) {
+        self.windows_pending_redraw.remove(window_id);
+
+        // Painting a secondary/deferred viewport can advance shared egui viewport
+        // state and make a pending root redraw stale. Do not let the guard keep
+        // blocking future root redraw requests.
+        if let Some(root_window_id) = self
+            .winit_app
+            .window_id_from_viewport_id(egui::ViewportId::ROOT)
+            && root_window_id != *window_id
+        {
+            self.windows_pending_redraw.remove(&root_window_id);
         }
     }
 }
@@ -360,7 +398,50 @@ impl<T: WinitApp> ApplicationHandler<UserEvent> for WinitAppWrapper<T> {
         event_loop_context::with_event_loop_context(event_loop, move || {
             let event_result = match event {
                 winit::event::WindowEvent::RedrawRequested => {
-                    self.winit_app.run_ui_and_paint(event_loop, window_id)
+                    self.clear_pending_redraw_before_paint(&window_id);
+                    let mut event_result = self.winit_app.run_ui_and_paint(event_loop, window_id);
+
+                    if cfg!(target_os = "windows")
+                        && event_result.is_ok()
+                        && self
+                            .winit_app
+                            .window_id_from_viewport_id(egui::ViewportId::ROOT)
+                            .is_some_and(|root_window_id| root_window_id == window_id)
+                    {
+                        let deferred_window_ids: Vec<_> = self
+                            .winit_app
+                            .viewport_windows()
+                            .into_iter()
+                            .filter(|viewport_window| {
+                                viewport_window.kind == ViewportWindowKind::Deferred
+                            })
+                            .map(|viewport_window| viewport_window.window_id)
+                            .collect();
+
+                        // On Windows, a focused root viewport can keep sibling deferred
+                        // viewport redraw events asleep. Paint only deferred viewport windows
+                        // here; immediate viewports are painted by their parent viewport.
+                        for deferred_window_id in deferred_window_ids {
+                            if deferred_window_id == window_id {
+                                continue;
+                            }
+
+                            let deferred_result = self
+                                .winit_app
+                                .run_ui_and_paint(event_loop, deferred_window_id);
+                            match (&event_result, deferred_result) {
+                                (_, Err(err)) => {
+                                    event_result = Err(err);
+                                    break;
+                                }
+                                (Ok(EventResult::Wait), Ok(EventResult::Wait)) => {}
+                                (Ok(EventResult::Wait), Ok(result)) => event_result = Ok(result),
+                                _ => {}
+                            }
+                        }
+                    }
+
+                    event_result
                 }
                 _ => self.winit_app.window_event(event_loop, window_id, event),
             };
