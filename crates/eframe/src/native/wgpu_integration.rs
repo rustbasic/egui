@@ -5,8 +5,7 @@
 //! There is a bunch of improvements we could do,
 //! like removing a bunch of `unwraps`.
 
-use core::{cell::RefCell, num::NonZeroU32};
-use std::{rc::Rc, sync::Arc, time::Instant};
+use std::{cell::RefCell, num::NonZeroU32, rc::Rc, sync::Arc, time::Instant};
 
 use egui_winit::ActionRequested;
 use parking_lot::Mutex;
@@ -31,7 +30,9 @@ use crate::{
     App, AppCreator, CreationContext, NativeOptions, Result, Storage,
     native::{
         epi_integration::EpiIntegration,
-        winit_integration::{EventResult, sleep_if_invisible_or_minimized},
+        winit_integration::{
+            EventResult, ViewportWindow, ViewportWindowKind, sleep_if_invisible_or_minimized,
+        },
     },
 };
 
@@ -310,7 +311,7 @@ impl<'app> WgpuWinitApp<'app> {
             egui_winit.init_accesskit(event_loop, &window, event_loop_proxy);
         }
 
-        let app_creator = core::mem::take(&mut self.app_creator)
+        let app_creator = std::mem::take(&mut self.app_creator)
             .expect("Single-use AppCreator has unexpectedly already been taken");
 
         crate::maybe_attach_inspection_plugin(&egui_ctx, Some(self.app_name.clone()));
@@ -413,6 +414,36 @@ impl WinitApp for WgpuWinitApp<'_> {
                 .as_ref()?
                 .id(),
         )
+    }
+
+    fn viewport_windows(&self) -> Vec<ViewportWindow> {
+        self.running
+            .as_ref()
+            .map(|running| {
+                running
+                    .shared
+                    .borrow()
+                    .viewports
+                    .iter()
+                    .filter_map(|(viewport_id, viewport)| {
+                        let window_id = viewport.window.as_ref()?.id();
+                        let kind = if *viewport_id == ViewportId::ROOT {
+                            ViewportWindowKind::Root
+                        } else if viewport.viewport_ui_cb.is_some() {
+                            ViewportWindowKind::Deferred
+                        } else {
+                            ViewportWindowKind::Immediate
+                        };
+
+                        Some(ViewportWindow {
+                            viewport_id: *viewport_id,
+                            window_id,
+                            kind,
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     fn save(&mut self) {
@@ -1041,7 +1072,7 @@ impl Viewport {
             egui_winit::process_viewport_commands(
                 egui_ctx,
                 &mut self.info,
-                core::mem::take(&mut self.deferred_commands),
+                std::mem::take(&mut self.deferred_commands),
                 window,
                 &mut self.actions_requested,
             );
