@@ -1,5 +1,4 @@
-use core::time::Duration;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use winit::{
     application::ApplicationHandler,
@@ -9,7 +8,7 @@ use winit::{
 
 use ahash::HashMap;
 
-use super::winit_integration::{UserEvent, WinitApp};
+use super::winit_integration::{UserEvent, ViewportWindowKind, WinitApp};
 use crate::{
     Result, epi,
     native::{
@@ -42,7 +41,7 @@ fn create_event_loop(native_options: &mut epi::NativeOptions) -> Result<EventLoo
             ))
         })?);
 
-    if let Some(hook) = core::mem::take(&mut native_options.event_loop_builder) {
+    if let Some(hook) = std::mem::take(&mut native_options.event_loop_builder) {
         hook(&mut builder);
     }
 
@@ -59,7 +58,7 @@ fn with_event_loop<R>(
     mut native_options: epi::NativeOptions,
     f: impl FnOnce(&mut EventLoop<UserEvent>, epi::NativeOptions) -> R,
 ) -> Result<R> {
-    thread_local!(static EVENT_LOOP: core::cell::RefCell<Option<EventLoop<UserEvent>>> = const { core::cell::RefCell::new(None) });
+    thread_local!(static EVENT_LOOP: std::cell::RefCell<Option<EventLoop<UserEvent>>> = const { std::cell::RefCell::new(None) });
 
     EVENT_LOOP.with(|event_loop| {
         // Since we want to reference NativeOptions when creating the EventLoop we can't
@@ -361,7 +360,49 @@ impl<T: WinitApp> ApplicationHandler<UserEvent> for WinitAppWrapper<T> {
         event_loop_context::with_event_loop_context(event_loop, move || {
             let event_result = match event {
                 winit::event::WindowEvent::RedrawRequested => {
-                    self.winit_app.run_ui_and_paint(event_loop, window_id)
+                    let mut event_result = self.winit_app.run_ui_and_paint(event_loop, window_id);
+
+                    if cfg!(target_os = "windows")
+                        && event_result.is_ok()
+                        && self
+                            .winit_app
+                            .window_id_from_viewport_id(egui::ViewportId::ROOT)
+                            .is_some_and(|root_window_id| root_window_id == window_id)
+                    {
+                        let deferred_window_ids: Vec<_> = self
+                            .winit_app
+                            .viewport_windows()
+                            .into_iter()
+                            .filter(|viewport_window| {
+                                viewport_window.kind == ViewportWindowKind::Deferred
+                            })
+                            .map(|viewport_window| viewport_window.window_id)
+                            .collect();
+
+                        // On Windows, a focused root viewport can keep sibling deferred
+                        // viewport redraw events asleep. Paint only deferred viewport windows
+                        // here; immediate viewports are painted by their parent viewport.
+                        for deferred_window_id in deferred_window_ids {
+                            if deferred_window_id == window_id {
+                                continue;
+                            }
+
+                            let deferred_result = self
+                                .winit_app
+                                .run_ui_and_paint(event_loop, deferred_window_id);
+                            match (&event_result, deferred_result) {
+                                (_, Err(err)) => {
+                                    event_result = Err(err);
+                                    break;
+                                }
+                                (Ok(EventResult::Wait), Ok(EventResult::Wait)) => {}
+                                (Ok(EventResult::Wait), Ok(result)) => event_result = Ok(result),
+                                _ => {}
+                            }
+                        }
+                    }
+
+                    event_result
                 }
                 _ => self.winit_app.window_event(event_loop, window_id, event),
             };
@@ -551,7 +592,7 @@ impl<'a> EframeWinitApplication<'a> {
     pub fn pump_eframe_app(
         &mut self,
         event_loop: &mut EventLoop<UserEvent>,
-        timeout: Option<core::time::Duration>,
+        timeout: Option<std::time::Duration>,
     ) -> EframePumpStatus {
         use winit::platform::pump_events::{EventLoopExtPumpEvents as _, PumpStatus};
 
