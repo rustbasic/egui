@@ -8,8 +8,7 @@
 #![expect(clippy::undocumented_unsafe_blocks)]
 #![expect(clippy::unwrap_used)]
 
-use core::{cell::RefCell, num::NonZeroU32};
-use std::{rc::Rc, sync::Arc, time::Instant};
+use std::{cell::RefCell, num::NonZeroU32, rc::Rc, sync::Arc, time::Instant};
 
 use egui_winit::ActionRequested;
 use glutin::{
@@ -41,7 +40,10 @@ use super::{
 use crate::epaint::textures::TexturesDelta;
 use crate::{
     App, AppCreator, CreationContext, NativeOptions, Result, Storage,
-    native::{epi_integration::EpiIntegration, winit_integration::sleep_if_invisible_or_minimized},
+    native::{
+        epi_integration::EpiIntegration,
+        winit_integration::{ViewportWindow, ViewportWindowKind, sleep_if_invisible_or_minimized},
+    },
 };
 
 // ----------------------------------------------------------------------------
@@ -153,7 +155,7 @@ impl Viewport {
             egui_winit::process_viewport_commands(
                 egui_ctx,
                 &mut self.info,
-                core::mem::take(&mut self.deferred_commands),
+                std::mem::take(&mut self.deferred_commands),
                 window,
                 &mut self.actions_requested,
             );
@@ -339,7 +341,7 @@ impl<'app> GlowWinitApp<'app> {
             log::warn!("set_cursor_hittest(false) failed: {err}");
         }
 
-        let app_creator = core::mem::take(&mut self.app_creator)
+        let app_creator = std::mem::take(&mut self.app_creator)
             .expect("Single-use AppCreator has unexpectedly already been taken");
 
         crate::maybe_attach_inspection_plugin(&integration.egui_ctx, Some(self.app_name.clone()));
@@ -425,6 +427,36 @@ impl WinitApp for GlowWinitApp<'_> {
             .window_from_viewport
             .get(&id)
             .copied()
+    }
+
+    fn viewport_windows(&self) -> Vec<ViewportWindow> {
+        self.running
+            .as_ref()
+            .map(|running| {
+                running
+                    .glutin
+                    .borrow()
+                    .viewports
+                    .iter()
+                    .filter_map(|(viewport_id, viewport)| {
+                        let window_id = viewport.window.as_ref()?.id();
+                        let kind = if *viewport_id == ViewportId::ROOT {
+                            ViewportWindowKind::Root
+                        } else if viewport.viewport_ui_cb.is_some() {
+                            ViewportWindowKind::Deferred
+                        } else {
+                            ViewportWindowKind::Immediate
+                        };
+
+                        Some(ViewportWindow {
+                            viewport_id: *viewport_id,
+                            window_id,
+                            kind,
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     fn save(&mut self) {
@@ -1409,7 +1441,7 @@ impl GlutinWindowContext {
         }
     }
 
-    fn get_proc_address(&self, addr: &core::ffi::CStr) -> *const core::ffi::c_void {
+    fn get_proc_address(&self, addr: &std::ffi::CStr) -> *const std::ffi::c_void {
         self.gl_config.display().get_proc_address(addr)
     }
 
