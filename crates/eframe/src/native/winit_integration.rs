@@ -25,7 +25,7 @@ pub fn is_invisible_or_minimized(window: &Window) -> bool {
 pub fn sleep_if_invisible_or_minimized(window: Option<&Window>) {
     if window.is_some_and(is_invisible_or_minimized) {
         profiling::scope!("minimized_sleep");
-        std::thread::sleep(core::time::Duration::from_millis(10));
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
 }
 
@@ -86,12 +86,28 @@ impl From<accesskit_winit::Event> for UserEvent {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ViewportWindowKind {
+    Root,
+    Deferred,
+    Immediate,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ViewportWindow {
+    pub viewport_id: ViewportId,
+    pub window_id: WindowId,
+    pub kind: ViewportWindowKind,
+}
+
 pub trait WinitApp {
     fn egui_ctx(&self) -> Option<&egui::Context>;
 
     fn window(&self, window_id: WindowId) -> Option<Arc<Window>>;
 
     fn window_id_from_viewport_id(&self, id: ViewportId) -> Option<WindowId>;
+
+    fn viewport_windows(&self) -> Vec<ViewportWindow>;
 
     fn save(&mut self);
 
