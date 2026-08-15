@@ -637,15 +637,6 @@ impl GlowWinitRunning<'_> {
             }
         }
 
-        // This experiment submits one transparent frame while creating deferred windows.
-        // Do not subsequently move the root context onto their surfaces.
-        if self.glutin.borrow().viewports[&viewport_id]
-            .viewport_ui_cb
-            .is_some()
-        {
-            return Ok(EventResult::Wait);
-        }
-
         let (raw_input, viewport_ui_cb, is_visible, show_ui) = {
             let mut glutin = self.glutin.borrow_mut();
             let egui_ctx = glutin.egui_ctx.clone();
@@ -1391,22 +1382,6 @@ impl GlutinWindowContext {
             if let Err(err) = gl_surface.set_swap_interval(&current_gl_context, self.swap_interval)
             {
                 log::warn!("Failed to set swap interval due to error: {err}");
-            }
-            // The deferred-viewport experiment only needs to submit one fully transparent
-            // frame. Its normal paint path is intentionally disabled above.
-            if viewport.viewport_ui_cb.is_some() {
-                let gl = unsafe {
-                    glow::Context::from_loader_function(|name| {
-                        let name = std::ffi::CString::new(name)
-                            .expect("GL procedure names cannot contain NUL");
-                        self.gl_config.display().get_proc_address(&name)
-                    })
-                };
-                unsafe {
-                    gl.clear_color(0.0, 0.0, 0.0, 0.0);
-                    gl.clear(glow::COLOR_BUFFER_BIT);
-                }
-                gl_surface.swap_buffers(&current_gl_context)?;
             }
 
             // we will reach this point only once in most platforms except android.
