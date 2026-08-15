@@ -12,6 +12,7 @@ use core::{cell::RefCell, num::NonZeroU32};
 use std::{rc::Rc, sync::Arc, time::Instant};
 
 use egui_winit::ActionRequested;
+use glow::HasContext as _;
 use glutin::{
     config::GlConfig as _,
     context::NotCurrentGlContext as _,
@@ -41,7 +42,10 @@ use super::{
 use crate::epaint::textures::TexturesDelta;
 use crate::{
     App, AppCreator, CreationContext, NativeOptions, Result, Storage,
-    native::{epi_integration::EpiIntegration, winit_integration::sleep_if_invisible_or_minimized},
+    native::{
+        epi_integration::EpiIntegration,
+        winit_integration::{ViewportWindow, ViewportWindowKind, sleep_if_invisible_or_minimized},
+    },
 };
 
 // ----------------------------------------------------------------------------
@@ -136,6 +140,8 @@ struct Viewport {
     // These three live and die together.
     // TODO(emilk): clump them together into one struct!
     gl_surface: Option<glutin::surface::Surface<glutin::surface::WindowSurface>>,
+    /// Shared child context retained by the deferred transparency experiment.
+    deferred_not_current_gl_context: Option<glutin::context::NotCurrentContext>,
     window: Option<Arc<Window>>,
     egui_winit: Option<egui_winit::State>,
 }
@@ -427,6 +433,36 @@ impl WinitApp for GlowWinitApp<'_> {
             .copied()
     }
 
+    fn viewport_windows(&self) -> Vec<ViewportWindow> {
+        self.running
+            .as_ref()
+            .map(|running| {
+                running
+                    .glutin
+                    .borrow()
+                    .viewports
+                    .iter()
+                    .filter_map(|(viewport_id, viewport)| {
+                        let window_id = viewport.window.as_ref()?.id();
+                        let kind = if *viewport_id == ViewportId::ROOT {
+                            ViewportWindowKind::Root
+                        } else if viewport.viewport_ui_cb.is_some() {
+                            ViewportWindowKind::Deferred
+                        } else {
+                            ViewportWindowKind::Immediate
+                        };
+
+                        Some(ViewportWindow {
+                            viewport_id: *viewport_id,
+                            window_id,
+                            kind,
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     fn save(&mut self) {
         log::debug!("WinitApp::save called");
         if let Some(running) = self.running.as_mut() {
@@ -599,6 +635,15 @@ impl GlowWinitRunning<'_> {
                 }
                 return Ok(EventResult::Wait);
             }
+        }
+
+        // This experiment submits one transparent frame while creating deferred windows.
+        // Do not subsequently move the root context onto their surfaces.
+        if self.glutin.borrow().viewports[&viewport_id]
+            .viewport_ui_cb
+            .is_some()
+        {
+            return Ok(EventResult::Wait);
         }
 
         let (raw_input, viewport_ui_cb, is_visible, show_ui) = {
@@ -1201,6 +1246,7 @@ impl GlutinWindowContext {
                 pending_delta: Default::default(),
                 viewport_ui_cb: None,
                 gl_surface: None,
+                deferred_not_current_gl_context: None,
                 window: window.map(Arc::new),
                 egui_winit: None,
             },
@@ -1271,8 +1317,13 @@ impl GlutinWindowContext {
             {
                 log::error!("Cannot create transparent window: the GL config does not support it");
             }
-            let window =
-                glutin_winit::finalize_window(event_loop, window_attributes, &self.gl_config)?;
+            let window = if viewport_id != ViewportId::ROOT && window_attributes.transparent() {
+                // Transparent child viewports need a transparent native window.
+                // Do not let the root GL config capability override that request.
+                event_loop.create_window(window_attributes)?
+            } else {
+                glutin_winit::finalize_window(event_loop, window_attributes, &self.gl_config)?
+            };
             egui_winit::apply_viewport_builder_to_window(
                 &self.egui_ctx,
                 &window,
@@ -1340,6 +1391,22 @@ impl GlutinWindowContext {
             if let Err(err) = gl_surface.set_swap_interval(&current_gl_context, self.swap_interval)
             {
                 log::warn!("Failed to set swap interval due to error: {err}");
+            }
+            // The deferred-viewport experiment only needs to submit one fully transparent
+            // frame. Its normal paint path is intentionally disabled above.
+            if viewport.viewport_ui_cb.is_some() {
+                let gl = unsafe {
+                    glow::Context::from_loader_function(|name| {
+                        let name = std::ffi::CString::new(name)
+                            .expect("GL procedure names cannot contain NUL");
+                        self.gl_config.display().get_proc_address(&name)
+                    })
+                };
+                unsafe {
+                    gl.clear_color(0.0, 0.0, 0.0, 0.0);
+                    gl.clear(glow::COLOR_BUFFER_BIT);
+                }
+                gl_surface.swap_buffers(&current_gl_context)?;
             }
 
             // we will reach this point only once in most platforms except android.
@@ -1497,9 +1564,17 @@ fn initialize_or_update_viewport(
             .and_then(|vp| vp.builder.icon.clone());
     }
 
+    let root_transparent = viewports
+        .get(&ViewportId::ROOT)
+        .and_then(|viewport| viewport.builder.transparent);
+
     match viewports.entry(ids.this) {
         Entry::Vacant(entry) => {
             // New viewport:
+            if ids.this != ViewportId::ROOT && builder.transparent.is_none() {
+                // Child viewports inherit the root setting unless they explicitly override it.
+                builder.transparent = root_transparent;
+            }
             log::debug!("Creating new viewport {:?} ({:?})", ids.this, builder.title);
             entry.insert(Viewport {
                 ids,
@@ -1512,6 +1587,7 @@ fn initialize_or_update_viewport(
                 viewport_ui_cb,
                 window: None,
                 egui_winit: None,
+                deferred_not_current_gl_context: None,
                 gl_surface: None,
             })
         }
@@ -1533,6 +1609,7 @@ fn initialize_or_update_viewport(
                     viewport.builder.title
                 );
                 viewport.window = None;
+                viewport.deferred_not_current_gl_context = None;
                 viewport.egui_winit = None;
                 viewport.gl_surface = None;
             }
