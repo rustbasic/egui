@@ -235,6 +235,7 @@ struct Viewport {
     // These three live and die together.
     // TODO(emilk): clump them together into one struct!
     gl_surface: Option<glutin::surface::Surface<glutin::surface::WindowSurface>>,
+
     /// Shared child context retained by the deferred transparency experiment.
     deferred_not_current_gl_context: Option<glutin::context::NotCurrentContext>,
     window: Option<Arc<Window>>,
