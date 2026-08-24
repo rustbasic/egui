@@ -167,7 +167,6 @@ impl GlowWinitRunning<'_> {
                 .get_mut(&ViewportId::ROOT)
                 .expect("the root viewport must exist");
             viewport.gl_surface = Some(gl_surface);
-            viewport.deferred_not_current_gl_context = None;
         }
         glutin.current_gl_context = Some(current_context);
         drop(glutin);
@@ -235,9 +234,6 @@ struct Viewport {
     // These three live and die together.
     // TODO(emilk): clump them together into one struct!
     gl_surface: Option<glutin::surface::Surface<glutin::surface::WindowSurface>>,
-
-    /// Shared child context retained by the deferred transparency experiment.
-    deferred_not_current_gl_context: Option<glutin::context::NotCurrentContext>,
     window: Option<Arc<Window>>,
     egui_winit: Option<egui_winit::State>,
 }
@@ -1382,7 +1378,6 @@ impl GlutinWindowContext {
                 pending_delta: Default::default(),
                 viewport_ui_cb: None,
                 gl_surface: None,
-                deferred_not_current_gl_context: None,
                 window: window.map(Arc::new),
                 egui_winit: None,
             },
@@ -1725,7 +1720,6 @@ fn initialize_or_update_viewport(
                 viewport_ui_cb,
                 window: None,
                 egui_winit: None,
-                deferred_not_current_gl_context: None,
                 gl_surface: None,
             })
         }
@@ -1747,7 +1741,6 @@ fn initialize_or_update_viewport(
                     viewport.builder.title
                 );
                 viewport.window = None;
-                viewport.deferred_not_current_gl_context = None;
                 viewport.egui_winit = None;
                 viewport.gl_surface = None;
             }
