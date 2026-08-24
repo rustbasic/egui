@@ -1445,6 +1445,7 @@ impl GlutinWindowContext {
             );
             if window_attributes.transparent()
                 && self.gl_config.supports_transparency() == Some(false)
+                && !cfg!(target_os = "windows")
             {
                 #[cfg(not(target_os = "windows"))]
                 {
