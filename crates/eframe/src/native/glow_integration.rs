@@ -19,7 +19,7 @@ use glutin::{
     prelude::{GlDisplay as _, PossiblyCurrentGlContext as _},
     surface::GlSurface as _,
 };
-use raw_window_handle::HasWindowHandle as _;
+use raw_window_handle::{HasDisplayHandle as _, HasWindowHandle as _};
 use winit::{
     event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy},
     window::{Window, WindowId},
@@ -76,8 +76,145 @@ struct GlowWinitRunning<'app> {
     // NOTE: one painter shared by all viewports.
     painter: Rc<RefCell<egui_glow::Painter>>,
 
+    // Kept here because F7 recovery must construct a renderer equivalent to startup.
+    shader_version: Option<egui_glow::ShaderVersion>,
+    dithering: bool,
+    /// Startup options retained so F7 can reuse the standard root initializer.
+    recovery_native_options: NativeOptions,
     /// Any not yet applied deltas for this app.
     pending_deltas: TexturesDelta,
+    /// Set by F7 and consumed from the next repaint, outside the key event dispatch.
+    render_state_recovery_requested: bool,
+}
+impl GlowWinitRunning<'_> {
+    /// Recreate the root window and OpenGL state through the normal startup path.
+    #[expect(
+        unsafe_code,
+        reason = "OpenGL context and surface creation requires glutin unsafe APIs"
+    )]
+    fn recreate_render_state(&mut self, event_loop: &ActiveEventLoop) -> Result {
+        let mut glutin = self.glutin.borrow_mut();
+        let egui_ctx = glutin.egui_ctx.clone();
+        let builder = glutin.viewport(ViewportId::ROOT).builder.clone();
+        let old_context = glutin
+            .current_gl_context
+            .take()
+            .ok_or_else(|| {
+                crate::Error::OpenGL(egui_glow::PainterError::from(
+                    "F7 recovery is missing the current GL context".to_owned(),
+                ))
+            })?
+            .make_not_current()?;
+
+        // This uses the same DisplayBuilder/config/window/surface initialization as startup.
+        let mut replacement = match unsafe {
+            GlutinWindowContext::new(
+                &egui_ctx,
+                builder,
+                &self.recovery_native_options,
+                event_loop,
+            )
+        } {
+            Ok(replacement) => replacement,
+            Err(err) => {
+                let old_surface = glutin
+                    .viewport(ViewportId::ROOT)
+                    .gl_surface
+                    .as_ref()
+                    .ok_or_else(|| {
+                        crate::Error::OpenGL(egui_glow::PainterError::from(
+                            "F7 recovery is missing the root GL surface".to_owned(),
+                        ))
+                    })?;
+                glutin.current_gl_context = Some(old_context.make_current(old_surface)?);
+                return Err(err);
+            }
+        };
+
+        let replacement_gl = unsafe {
+            Arc::new(glow::Context::from_loader_function(|name| {
+                let name = std::ffi::CString::new(name)
+                    .expect("failed to construct C string from GL procedure name");
+                replacement.get_proc_address(&name)
+            }))
+        };
+        let replacement_painter = match egui_glow::Painter::new(
+            Arc::clone(&replacement_gl),
+            "",
+            self.shader_version,
+            self.dithering,
+        ) {
+            Ok(painter) => painter,
+            Err(err) => {
+                let replacement_context = replacement
+                    .current_gl_context
+                    .take()
+                    .expect("standard root initialization must make its context current")
+                    .make_not_current()?;
+                drop(replacement_context);
+                let old_surface = glutin
+                    .viewport(ViewportId::ROOT)
+                    .gl_surface
+                    .as_ref()
+                    .expect("F7 recovery must retain the root GL surface");
+                glutin.current_gl_context = Some(old_context.make_current(old_surface)?);
+                return Err(crate::Error::OpenGL(err));
+            }
+        };
+
+        let window;
+        {
+            let replacement_context = replacement
+                .current_gl_context
+                .take()
+                .expect("standard root initialization must make its context current")
+                .make_not_current()?;
+            let replacement_surface = replacement
+                .viewport(ViewportId::ROOT)
+                .gl_surface
+                .as_ref()
+                .expect("standard root initialization must create a root surface");
+            let old_surface = glutin
+                .viewport(ViewportId::ROOT)
+                .gl_surface
+                .as_ref()
+                .expect("F7 recovery must retain the root GL surface");
+            let old_context = old_context.make_current(old_surface)?;
+            self.painter.borrow_mut().destroy();
+            drop(old_context.make_not_current()?);
+            replacement.current_gl_context =
+                Some(replacement_context.make_current(replacement_surface)?);
+            window = replacement.window(ViewportId::ROOT);
+        }
+
+        let max_texture_side = replacement_painter.max_texture_side();
+        replacement.max_texture_side = Some(max_texture_side);
+        replacement
+            .viewports
+            .get_mut(&ViewportId::ROOT)
+            .expect("standard root initialization must retain the root viewport")
+            .egui_winit
+            .as_mut()
+            .expect("standard root initialization must create root egui_winit")
+            .set_max_texture_side(max_texture_side);
+        *glutin = replacement;
+        *self.painter.borrow_mut() = replacement_painter;
+        self.integration.frame.gl = Some(replacement_gl);
+        self.integration.frame.window = Some(window.clone());
+        self.integration.frame.raw_window_handle =
+            window.window_handle().map(|handle| handle.as_raw());
+        self.integration.frame.raw_display_handle =
+            window.display_handle().map(|handle| handle.as_raw());
+        window.set_visible(true);
+        if !window.has_focus() {
+            window.focus_window();
+        }
+        drop(glutin);
+
+        self.integration.egui_ctx.request_full_texture_reupload();
+        self.integration.egui_ctx.request_repaint();
+        Ok(())
+    }
 }
 
 impl Drop for GlowWinitRunning<'_> {
@@ -396,7 +533,11 @@ impl<'app> GlowWinitApp<'app> {
             app,
             glutin,
             painter,
+            shader_version: self.native_options.glow_options.shader_version,
+            dithering: self.native_options.dithering,
+            recovery_native_options: self.native_options.clone(),
             pending_deltas: Default::default(),
+            render_state_recovery_requested: false,
         }))
     }
 }
@@ -529,11 +670,44 @@ impl WinitApp for GlowWinitApp<'_> {
 
     fn window_event(
         &mut self,
-        _: &ActiveEventLoop,
+        _event_loop: &ActiveEventLoop,
         window_id: WindowId,
         event: winit::event::WindowEvent,
     ) -> Result<EventResult> {
         if let Some(running) = &mut self.running {
+            let is_f7 = matches!(
+                &event,
+                winit::event::WindowEvent::KeyboardInput {
+                    event: winit::event::KeyEvent {
+                        physical_key: winit::keyboard::PhysicalKey::Code(
+                            winit::keyboard::KeyCode::F7
+                        ),
+                        state: winit::event::ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                    ..
+                }
+            );
+            let root_window_id = running
+                .glutin
+                .borrow()
+                .window_from_viewport
+                .get(&ViewportId::ROOT)
+                .copied();
+            if is_f7 {
+                log::warn!(
+                    "F7 received for window {window_id:?}; current root window is {root_window_id:?}"
+                );
+            }
+
+            if is_f7 && root_window_id == Some(window_id) {
+                // Do not drop the root window while winit dispatches this keyboard event.
+                running.render_state_recovery_requested = true;
+                log::warn!("F7 queued a manual glow render-state recovery");
+                return Ok(EventResult::RepaintNext(window_id));
+            }
+
             Ok(running.on_window_event(window_id, &event))
         } else {
             Ok(EventResult::Exit)
@@ -569,6 +743,19 @@ impl GlowWinitRunning<'_> {
         window_id: WindowId,
     ) -> Result<EventResult> {
         profiling::function_scope!();
+
+        if self.render_state_recovery_requested {
+            self.render_state_recovery_requested = false;
+            log::warn!("F7 starting queued glow render-state recovery");
+            if let Err(err) = self.recreate_render_state(event_loop) {
+                log::error!("F7 glow render-state recovery failed: {err}");
+            } else {
+                let replacement_window_id =
+                    self.glutin.borrow().window_from_viewport[&ViewportId::ROOT];
+                log::warn!("F7 glow render-state recovery completed");
+                return Ok(EventResult::RepaintNow(replacement_window_id));
+            }
+        }
 
         let Some(viewport_id) = self
             .glutin
@@ -1008,19 +1195,19 @@ fn change_gl_context(
 ) {
     profiling::function_scope!();
 
-    if !cfg!(target_os = "windows") {
-        // According to https://github.com/emilk/egui/issues/4289
-        // we cannot do this early-out on Windows.
-        // TODO(emilk): optimize context switching on Windows too.
-        // See https://github.com/emilk/egui/issues/4173
+    // if !cfg!(target_os = "windows") {
+    // According to https://github.com/emilk/egui/issues/4289
+    // we cannot do this early-out on Windows.
+    // TODO(emilk): optimize context switching on Windows too.
+    // See https://github.com/emilk/egui/issues/4173
 
-        if let Some(current_gl_context) = current_gl_context {
-            profiling::scope!("is_current");
-            if gl_surface.is_current(current_gl_context) {
-                return; // Early-out to save a lot of time.
-            }
+    if let Some(current_gl_context) = current_gl_context {
+        profiling::scope!("is_current");
+        if gl_surface.is_current(current_gl_context) {
+            return; // Early-out to save a lot of time.
         }
     }
+    // }
 
     let not_current = if let Some(not_current_context) = not_current_gl_context.take() {
         not_current_context
@@ -1094,10 +1281,9 @@ impl GlutinWindowContext {
             //
             // The justification for FallbackEgl over PreferEgl is at https://github.com/emilk/egui/pull/2526#issuecomment-1400229576 .
             .with_preference(glutin_winit::ApiPreference::FallbackEgl)
-            .with_window_attributes(Some(egui_winit::apply_monitor_to_window_attributes(
-                egui_winit::create_winit_window_attributes(egui_ctx, viewport_builder.clone()),
-                &viewport_builder,
-                event_loop,
+            .with_window_attributes(Some(egui_winit::create_winit_window_attributes(
+                egui_ctx,
+                viewport_builder.clone(),
             )));
 
         let (window, gl_config) = {
@@ -1263,13 +1449,9 @@ impl GlutinWindowContext {
             window
         } else {
             log::debug!("Creating a window for viewport {viewport_id:?}");
-            let window_attributes = egui_winit::apply_monitor_to_window_attributes(
-                egui_winit::create_winit_window_attributes(
-                    &self.egui_ctx,
-                    viewport.builder.clone(),
-                ),
-                &viewport.builder,
-                event_loop,
+            let window_attributes = egui_winit::create_winit_window_attributes(
+                &self.egui_ctx,
+                viewport.builder.clone(),
             );
             if window_attributes.transparent()
                 && self.gl_config.supports_transparency() == Some(false)
