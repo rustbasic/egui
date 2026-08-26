@@ -1195,19 +1195,19 @@ fn change_gl_context(
 ) {
     profiling::function_scope!();
 
-    // if !cfg!(target_os = "windows") {
-    // According to https://github.com/emilk/egui/issues/4289
-    // we cannot do this early-out on Windows.
-    // TODO(emilk): optimize context switching on Windows too.
-    // See https://github.com/emilk/egui/issues/4173
+    if !cfg!(target_os = "windows") {
+        // According to https://github.com/emilk/egui/issues/4289
+        // we cannot do this early-out on Windows.
+        // TODO(emilk): optimize context switching on Windows too.
+        // See https://github.com/emilk/egui/issues/4173
 
-    if let Some(current_gl_context) = current_gl_context {
-        profiling::scope!("is_current");
-        if gl_surface.is_current(current_gl_context) {
-            return; // Early-out to save a lot of time.
+        if let Some(current_gl_context) = current_gl_context {
+            profiling::scope!("is_current");
+            if gl_surface.is_current(current_gl_context) {
+                return; // Early-out to save a lot of time.
+            }
         }
     }
-    // }
 
     let not_current = if let Some(not_current_context) = not_current_gl_context.take() {
         not_current_context
