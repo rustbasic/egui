@@ -125,7 +125,17 @@ impl ContextImpl {
     }
 
     fn request_repaint(&mut self, viewport_id: ViewportId, cause: RepaintCause) {
-        self.request_repaint_after(Duration::ZERO, viewport_id, cause);
+        let delay = if self
+            .viewports
+            .get(&viewport_id)
+            .is_some_and(|viewport| viewport.class == ViewportClass::Deferred)
+        {
+            // Deferred native viewports avoid the immediate two-pass repaint path.
+            Duration::from_nanos(1)
+        } else {
+            Duration::ZERO
+        };
+        self.request_repaint_after(delay, viewport_id, cause);
     }
 
     fn request_repaint_after(
@@ -2509,6 +2519,14 @@ impl Context {
         });
 
         handle
+    }
+
+    /// Request full uploads of all managed textures after a renderer recovery.
+    ///
+    /// Integrations that recreate their GPU renderer while keeping this context need this
+    /// so live texture handles are restored in the new backend texture map.
+    pub fn request_full_texture_reupload(&self) {
+        self.tex_manager().write().request_full_reupload();
     }
 
     /// Low-level texture manager.
