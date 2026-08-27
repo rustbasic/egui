@@ -136,9 +136,12 @@ impl ContextImpl {
     ) {
         let viewport = self.viewports.entry(viewport_id).or_default();
 
-        if delay == Duration::ZERO {
+        if delay == Duration::ZERO && viewport.class != ViewportClass::Deferred {
             // Each request results in two repaints, just to give some things time to settle.
             // This solves some corner-cases of missing repaints on frame-delayed responses.
+            //
+            // Deferred viewports use their own native-window redraw events. Avoid a second
+            // zero-delay repaint that can race with the integration's stale-event filtering.
             viewport.repaint.outstanding = 1;
         } else {
             // For non-zero delays, we only repaint once, because
@@ -2509,6 +2512,14 @@ impl Context {
         });
 
         handle
+    }
+
+    /// Request full uploads of all managed textures after a renderer recovery.
+    ///
+    /// Integrations that recreate their GPU renderer while keeping this context need this
+    /// so live texture handles are restored in the new backend texture map.
+    pub fn request_full_texture_reupload(&self) {
+        self.tex_manager().write().request_full_reupload();
     }
 
     /// Low-level texture manager.
