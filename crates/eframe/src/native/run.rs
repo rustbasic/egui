@@ -310,16 +310,23 @@ impl<T: WinitApp> ApplicationHandler<UserEvent> for WinitAppWrapper<T> {
             let event_result = match event {
                 UserEvent::RequestRepaint {
                     when,
+                    delay,
                     cumulative_pass_nr,
                     viewport_id,
+                    viewport_class,
                 } => {
                     let current_pass_nr = self
                         .winit_app
                         .egui_ctx()
                         .map_or(0, |ctx| ctx.cumulative_pass_nr_for(viewport_id));
-                    if current_pass_nr == cumulative_pass_nr
-                        || current_pass_nr == cumulative_pass_nr + 1
-                    {
+                    let pass_is_current_enough = current_pass_nr == cumulative_pass_nr
+                        || current_pass_nr == cumulative_pass_nr + 1;
+                    // Preserve egui's two-pass repaint correction for deferred native viewports.
+                    // Delayed requests keep the usual stale-event protection.
+                    let allow_stale_deferred_immediate_repaint =
+                        viewport_class == egui::ViewportClass::Deferred && delay == Duration::ZERO;
+
+                    if pass_is_current_enough || allow_stale_deferred_immediate_repaint {
                         log::trace!("UserEvent::RequestRepaint scheduling repaint at {when:?}");
                         if let Some(window_id) =
                             self.winit_app.window_id_from_viewport_id(viewport_id)
