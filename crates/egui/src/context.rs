@@ -52,6 +52,9 @@ pub struct RequestRepaintInfo {
     /// This is used to specify what viewport that should repaint.
     pub viewport_id: ViewportId,
 
+    /// The viewport class when this repaint was requested.
+    pub viewport_class: ViewportClass,
+
     /// Repaint after this duration. If zero, repaint as soon as possible.
     pub delay: Duration,
 
@@ -117,6 +120,7 @@ impl ContextImpl {
             if let Some(callback) = &self.request_repaint_callback {
                 (callback)(RequestRepaintInfo {
                     viewport_id,
+                    viewport_class: viewport.class,
                     delay: Duration::ZERO,
                     current_cumulative_pass_nr: viewport.repaint.cumulative_pass_nr,
                 });
@@ -136,12 +140,9 @@ impl ContextImpl {
     ) {
         let viewport = self.viewports.entry(viewport_id).or_default();
 
-        if delay == Duration::ZERO && viewport.class != ViewportClass::Deferred {
+        if delay == Duration::ZERO {
             // Each request results in two repaints, just to give some things time to settle.
             // This solves some corner-cases of missing repaints on frame-delayed responses.
-            //
-            // Deferred viewports use their own native-window redraw events. Avoid a second
-            // zero-delay repaint that can race with the integration's stale-event filtering.
             viewport.repaint.outstanding = 1;
         } else {
             // For non-zero delays, we only repaint once, because
@@ -166,6 +167,7 @@ impl ContextImpl {
             if let Some(callback) = &self.request_repaint_callback {
                 (callback)(RequestRepaintInfo {
                     viewport_id,
+                    viewport_class: viewport.class,
                     delay,
                     current_cumulative_pass_nr: viewport.repaint.cumulative_pass_nr,
                 });
