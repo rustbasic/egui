@@ -1,11 +1,14 @@
-use std::{sync::Arc, time::Instant};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use winit::{
     event_loop::ActiveEventLoop,
     window::{Window, WindowId},
 };
 
-use egui::ViewportId;
+use egui::{ViewportClass, ViewportId};
 #[cfg(feature = "accesskit")]
 use egui_winit::accesskit_winit;
 
@@ -66,6 +69,12 @@ pub enum UserEvent {
     RequestRepaint {
         /// What to repaint.
         viewport_id: ViewportId,
+
+        /// The viewport class when the repaint was requested.
+        viewport_class: ViewportClass,
+
+        /// The requested repaint delay.
+        delay: Duration,
 
         /// When to repaint.
         when: Instant,
