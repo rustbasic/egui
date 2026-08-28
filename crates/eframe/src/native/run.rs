@@ -9,7 +9,7 @@ use winit::{
 
 use ahash::HashMap;
 
-use super::winit_integration::{UserEvent, WinitApp};
+use super::winit_integration::{UserEvent, ViewportWindowKind, WinitApp};
 use crate::{
     Result, epi,
     native::{
@@ -190,6 +190,7 @@ impl<T: WinitApp> WinitAppWrapper<T> {
         let now = Instant::now();
 
         let mut invisible_window_ids = Vec::new();
+        let mut deferred_window_ids = Vec::new();
 
         self.windows_next_repaint_times
             .retain(|window_id, repaint_time| {
@@ -205,6 +206,14 @@ impl<T: WinitApp> WinitAppWrapper<T> {
                     // See: https://github.com/emilk/egui/issues/5229
                     if is_invisible_or_minimized(&window) {
                         invisible_window_ids.push(*window_id);
+                    } else if cfg!(target_os = "windows")
+                        && self.winit_app.viewport_window_kind(*window_id)
+                            == Some(ViewportWindowKind::Deferred)
+                    {
+                        // Windows can fail to deliver RedrawRequested for a deferred
+                        // viewport while the root viewport is active. This window has an
+                        // actual expired repaint request, so paint only this target directly.
+                        deferred_window_ids.push(*window_id);
                     } else {
                         log::trace!("request_redraw for {window_id:?}");
                         // Don't switch to `ControlFlow::Poll` here. `request_redraw`
@@ -225,6 +234,13 @@ impl<T: WinitApp> WinitAppWrapper<T> {
         // RedrawRequested events on Windows. This ensures that viewport
         // commands like Visible(true) are still processed.
         for window_id in &invisible_window_ids {
+            let event_result = self.winit_app.run_ui_and_paint(event_loop, *window_id);
+            self.handle_event_result(event_loop, event_result);
+        }
+
+        // Paint only expired Deferred repaint requests directly on Windows.
+        // Root and immediate viewports continue through RedrawRequested above.
+        for window_id in &deferred_window_ids {
             let event_result = self.winit_app.run_ui_and_paint(event_loop, *window_id);
             self.handle_event_result(event_loop, event_result);
         }
@@ -298,7 +314,6 @@ impl<T: WinitApp> ApplicationHandler<UserEvent> for WinitAppWrapper<T> {
             self.handle_event_result(event_loop, event_result);
         });
     }
-
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
         profiling::function_scope!(match &event {
             UserEvent::RequestRepaint { .. } => "UserEvent::RequestRepaint",
