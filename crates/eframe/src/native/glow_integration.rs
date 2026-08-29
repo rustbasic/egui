@@ -142,24 +142,15 @@ impl GlowWinitRunning<'_> {
                 .create_context(&glutin.gl_config, &context_attributes)
         } {
             Ok(context) => context,
-            Err(default_err) => {
+            Err(err) => {
                 log::warn!(
-                    "F7 replacement GL context default creation failed: {default_err:?}; retrying GLES fallback"
+                    "F7 failed to create a replacement GL context with default attributes: {err}"
                 );
-                match unsafe {
+                unsafe {
                     glutin
                         .gl_config
                         .display()
-                        .create_context(&glutin.gl_config, &fallback_context_attributes)
-                } {
-                    Ok(context) => context,
-                    Err(fallback_err) => {
-                        return Err(crate::Error::OpenGL(egui_glow::PainterError::from(
-                            format!(
-                                "F7 replacement GL context creation failed before replacing the active renderer; default={default_err:?}, GLES fallback={fallback_err:?}"
-                            ),
-                        )));
-                    }
+                        .create_context(&glutin.gl_config, &fallback_context_attributes)?
                 }
             }
         };
