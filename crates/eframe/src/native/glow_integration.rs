@@ -1066,6 +1066,7 @@ impl GlowWinitRunning<'_> {
         } {
             return Ok(EventResult::Wait);
         }
+
         let Some(viewport_id) = self
             .glutin
             .borrow()
