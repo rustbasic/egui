@@ -541,6 +541,9 @@ impl Drop for Viewport {
         self.pending_delta.clear();
     }
 }
+
+// ----------------------------------------------------------------------------
+
 fn create_window_for_viewport(
     egui_ctx: &egui::Context,
     gl_config: &glutin::config::Config,
@@ -581,8 +584,6 @@ fn create_window_for_viewport(
     egui_winit::update_viewport_info(&mut viewport_info, egui_ctx, &window, true);
     Ok((Arc::new(window), viewport_info))
 }
-
-// ----------------------------------------------------------------------------
 
 // ----------------------------------------------------------------------------
 
