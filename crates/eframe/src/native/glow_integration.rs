@@ -140,9 +140,9 @@ impl GlowWinitRunning<'_> {
         if existing_display_recovery.is_ok() {
             #[cfg(target_os = "windows")]
             {
-                // A pre-freeze standby can make the replacement window visible before its
-                // rendering path is fully usable. Immediately consume the standby rearmed
-                // from that successful transition, matching the second manual F7 recovery.
+                // A single replacement can leave the whole window white after a freeze.
+                // Immediately perform a second replacement with the standby re-armed by the
+                // first transition so the recovered window renders its full contents.
                 glutin
                     .current_gl_context
                     .as_ref()
