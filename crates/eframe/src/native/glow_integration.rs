@@ -9,7 +9,11 @@
 #![expect(clippy::unwrap_used)]
 
 use core::{cell::RefCell, num::NonZeroU32};
-use std::{rc::Rc, sync::Arc, time::Instant};
+use std::{
+    rc::Rc,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use egui_winit::ActionRequested;
 use glutin::{
@@ -89,6 +93,9 @@ struct GlowWinitRunning<'app> {
     recovery_native_options: NativeOptions,
     /// Set by F7 and consumed from the next repaint, outside the key event dispatch.
     render_state_recovery_requested: bool,
+    /// `(recovery_started_at, last_logged_at)` for the post-F7 root swap diagnostic.
+    #[cfg(target_os = "windows")]
+    render_state_recovery_diagnostic: Option<(Instant, Instant)>,
 }
 
 impl GlowWinitRunning<'_> {
@@ -931,6 +938,8 @@ impl<'app> GlowWinitApp<'app> {
             #[cfg(not(target_os = "windows"))]
             recovery_native_options: self.native_options.clone(),
             render_state_recovery_requested: false,
+            #[cfg(target_os = "windows")]
+            render_state_recovery_diagnostic: None,
         }))
     }
 }
@@ -1112,6 +1121,11 @@ impl WinitApp for GlowWinitApp<'_> {
 
             if is_f7 && root_window_id == Some(window_id) {
                 // Do not drop the root window while winit dispatches this keyboard event.
+                #[cfg(target_os = "windows")]
+                {
+                    let now = Instant::now();
+                    running.render_state_recovery_diagnostic = Some((now, now));
+                }
                 running.render_state_recovery_requested = true;
                 log::warn!("F7 queued a manual glow render-state recovery");
                 return Ok(EventResult::RepaintNext(window_id));
@@ -1340,6 +1354,8 @@ impl GlowWinitRunning<'_> {
             glutin,
             painter,
             pending_deltas,
+            #[cfg(target_os = "windows")]
+            render_state_recovery_diagnostic,
             ..
         } = self;
 
@@ -1452,6 +1468,27 @@ impl GlowWinitRunning<'_> {
 
                 gl_surface.swap_buffers(context)?;
                 frame_timer.resume();
+
+                #[cfg(target_os = "windows")]
+                if viewport_id == ViewportId::ROOT
+                    && let Some((recovery_started_at, last_logged_at)) =
+                        render_state_recovery_diagnostic.as_mut()
+                {
+                    let now = Instant::now();
+                    if now.duration_since(*last_logged_at) >= Duration::from_secs(10) {
+                        *last_logged_at = now;
+                        let window_size: [u32; 2] = window.inner_size().into();
+                        log::info!(
+                            "post-F7 root swap diagnostic: recovery_elapsed={:.1}s window_id={window_id:?} visible={is_visible} size={}x{} current_context={} not_current_context={} standby_context={}",
+                            now.duration_since(*recovery_started_at).as_secs_f32(),
+                            window_size[0],
+                            window_size[1],
+                            current_gl_context.is_some(),
+                            not_current_gl_context.is_some(),
+                            glutin.standby_gl_context.is_some(),
+                        );
+                    }
+                }
             }
 
             // give it time to settle:
