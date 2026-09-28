@@ -82,6 +82,7 @@ impl WindowDrag {
 pub struct Window<'a> {
     title: Atoms<'a>,
     open: Option<&'a mut bool>,
+    show_close_button: bool,
     area: Area,
     frame: Option<Frame>,
     title_frame: Option<Frame>,
@@ -105,6 +106,7 @@ impl<'a> Window<'a> {
         Self {
             title,
             open: None,
+            show_close_button: false,
             area,
             frame: None,
             title_frame: None,
@@ -172,6 +174,15 @@ impl<'a> Window<'a> {
     #[inline]
     pub fn open(mut self, open: &'a mut bool) -> Self {
         self.open = Some(open);
+        self
+    }
+
+    /// Show a close button without connecting it to open/close state.
+    ///
+    /// The button is only decorative unless used together with [`Self::open`].
+    #[inline]
+    pub fn show_close_button(mut self, show: bool) -> Self {
+        self.show_close_button = show;
         self
     }
 
@@ -556,6 +567,7 @@ impl Window<'_> {
         let Window {
             title,
             mut open,
+            show_close_button,
             area,
             frame,
             title_frame,
@@ -724,6 +736,7 @@ impl Window<'_> {
                             collapsible,
                             on_top,
                             open.as_deref_mut(),
+                            show_close_button,
                             auto_sized,
                             effective_drag == WindowDrag::TitleBar,
                             area_id,
@@ -1314,6 +1327,7 @@ fn title_ui(
     collapsible: bool,
     active: bool,
     open: Option<&mut bool>,
+    show_close_button: bool,
     auto_sized: bool,
     drag_to_move: bool,
     area_id: Id,
@@ -1355,7 +1369,7 @@ fn title_ui(
 
     atoms.push_right(Atom::grow());
 
-    if open.is_some() {
+    if show_close_button || open.is_some() {
         atoms.push_right(Atom::custom(close_atom_id, button_allocation_size));
     }
 
@@ -1412,12 +1426,12 @@ fn title_ui(
     }
 
     // Close button
-    if let Some(open) = open
-        && let Some(rect) = layout_response.rect(close_atom_id)
-    {
+    if let Some(rect) = layout_response.rect(close_atom_id) {
         let rect = rect.shrink2(button_shrink);
         title_click_rect = title_click_rect.with_max_x(rect.min.x);
-        if close_button(&mut child_ui, rect).clicked() {
+        if close_button(&mut child_ui, rect).clicked()
+            && let Some(open) = open
+        {
             *open = false;
         }
     }
