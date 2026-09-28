@@ -59,8 +59,9 @@ impl eframe::App for MyApp {
         });
 
         if self.show_immediate_viewport {
-            ui.ctx().show_viewport_immediate(
-                egui::ViewportId::from_hash_of("immediate_viewport"),
+            let immediate_viewport_id = egui::ViewportId::from_hash_of("immediate_viewport");
+            let _ = ui.ctx().show_viewport_immediate(
+                immediate_viewport_id,
                 egui::ViewportBuilder::default()
                     .with_title("Immediate Viewport")
                     .with_inner_size([200.0, 100.0]),
@@ -81,12 +82,20 @@ impl eframe::App for MyApp {
                     }
                 },
             );
+            if ui
+                .ctx()
+                .take_embedded_viewport_close_requested(immediate_viewport_id)
+            {
+                self.show_immediate_viewport = false;
+            }
         }
 
         if self.show_deferred_viewport.load(Ordering::Relaxed) {
             let show_deferred_viewport = Arc::clone(&self.show_deferred_viewport);
+            let show_deferred_viewport_for_close = Arc::clone(&show_deferred_viewport);
+            let deferred_viewport_id = egui::ViewportId::from_hash_of("deferred_viewport");
             ui.ctx().show_viewport_deferred(
-                egui::ViewportId::from_hash_of("deferred_viewport"),
+                deferred_viewport_id,
                 egui::ViewportBuilder::default()
                     .with_title("Deferred Viewport")
                     .with_inner_size([200.0, 100.0]),
@@ -107,6 +116,12 @@ impl eframe::App for MyApp {
                     }
                 },
             );
+            if ui
+                .ctx()
+                .take_embedded_viewport_close_requested(deferred_viewport_id)
+            {
+                show_deferred_viewport_for_close.store(false, Ordering::Relaxed);
+            }
         }
     }
 }
