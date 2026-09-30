@@ -26,6 +26,22 @@ use crate::{
 /// See <https://github.com/emilk/egui/issues/7776>.
 const INVISIBLE_WINDOW_REPAINT_INTERVAL: Duration = Duration::from_millis(100);
 
+#[cfg(target_os = "windows")]
+struct RedrawLedger<Id> {
+    next: u64,
+    asked: HashMap<Id, u64>,
+}
+
+#[cfg(target_os = "windows")]
+impl<Id> Default for RedrawLedger<Id> {
+    fn default() -> Self {
+        Self {
+            next: 0,
+            asked: HashMap::default(),
+        }
+    }
+}
+
 // ----------------------------------------------------------------------------
 fn create_event_loop(native_options: &mut epi::NativeOptions) -> Result<EventLoop<UserEvent>> {
     #[cfg(target_os = "android")]
@@ -78,6 +94,8 @@ fn with_event_loop<R>(
 /// Wraps a [`WinitApp`] to implement [`ApplicationHandler`]. This handles redrawing, exit states, and
 /// some events, but otherwise forwards events to the [`WinitApp`].
 struct WinitAppWrapper<T: WinitApp> {
+    #[cfg(target_os = "windows")]
+    redraw_ledger: RedrawLedger<WindowId>,
     windows_next_repaint_times: HashMap<WindowId, Instant>,
     winit_app: T,
     return_result: Result<(), crate::Error>,
@@ -87,6 +105,8 @@ struct WinitAppWrapper<T: WinitApp> {
 impl<T: WinitApp> WinitAppWrapper<T> {
     fn new(winit_app: T, run_and_return: bool) -> Self {
         Self {
+            #[cfg(target_os = "windows")]
+            redraw_ledger: RedrawLedger::default(),
             windows_next_repaint_times: HashMap::default(),
             winit_app,
             return_result: Ok(()),
@@ -214,6 +234,8 @@ impl<T: WinitApp> WinitAppWrapper<T> {
                         // busy-loops a whole CPU core.
                         // See https://github.com/emilk/egui/issues/8326.
                         window.request_redraw();
+                        #[cfg(target_os = "windows")]
+                        self.redraw_ledger.asked(*window_id);
                     }
                 } else {
                     log::trace!("No window found for {window_id:?}");
@@ -372,7 +394,21 @@ impl<T: WinitApp> ApplicationHandler<UserEvent> for WinitAppWrapper<T> {
         event_loop_context::with_event_loop_context(event_loop, move || {
             let event_result = match event {
                 winit::event::WindowEvent::RedrawRequested => {
-                    self.winit_app.run_ui_and_paint(event_loop, window_id)
+                    #[cfg(target_os = "windows")]
+                    let passed_over = self.redraw_ledger.painted(window_id);
+                    let event_result = self.winit_app.run_ui_and_paint(event_loop, window_id);
+                    self.handle_event_result(event_loop, event_result);
+
+                    #[cfg(target_os = "windows")]
+                    for passed_window in passed_over {
+                        if event_loop.exiting() {
+                            break;
+                        }
+                        let event_result =
+                            self.winit_app.run_ui_and_paint(event_loop, passed_window);
+                        self.handle_event_result(event_loop, event_result);
+                    }
+                    return;
                 }
                 _ => self.winit_app.window_event(event_loop, window_id, event),
             };
@@ -585,4 +621,63 @@ pub enum EframePumpStatus {
 
     /// The exit code for the application
     Exit(i32),
+}
+
+// ----------------------------------------------------------------------------
+
+#[cfg(target_os = "windows")]
+impl<Id: Copy + Eq + std::hash::Hash> RedrawLedger<Id> {
+    /// Keep the earliest unanswered redraw request for each window.
+    fn asked(&mut self, window: Id) {
+        let order = self.next;
+        self.next += 1;
+        self.asked.entry(window).or_insert(order);
+    }
+
+    /// Forget this paint and return older outstanding requests, oldest first.
+    fn painted(&mut self, window: Id) -> Vec<Id> {
+        let Some(order) = self.asked.remove(&window) else {
+            return Vec::new();
+        };
+
+        let mut passed: Vec<(u64, Id)> = self
+            .asked
+            .iter()
+            .filter(|&(_, &asked)| asked < order)
+            .map(|(&window, &asked)| (asked, window))
+            .collect();
+        passed.sort_unstable_by_key(|&(asked, _)| asked);
+        for (_, window) in &passed {
+            self.asked.remove(window);
+        }
+        passed.into_iter().map(|(_, window)| window).collect()
+    }
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod redraw_ledger_tests {
+    use super::RedrawLedger;
+
+    #[test]
+    fn paints_older_waiting_requests_in_order() {
+        let mut ledger = RedrawLedger::default();
+        ledger.asked(1_u8);
+        ledger.asked(2_u8);
+        ledger.asked(1_u8);
+        ledger.asked(3_u8);
+
+        assert_eq!(ledger.painted(3), vec![1, 2]);
+        assert!(ledger.painted(1).is_empty());
+    }
+
+    #[test]
+    fn does_not_pass_requests_made_after_the_paint() {
+        let mut ledger = RedrawLedger::default();
+        ledger.asked(1_u8);
+        ledger.asked(2_u8);
+        ledger.asked(3_u8);
+
+        assert_eq!(ledger.painted(1), Vec::<u8>::new());
+        assert_eq!(ledger.painted(3), vec![2]);
+    }
 }
