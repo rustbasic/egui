@@ -10,13 +10,13 @@ struct GlyphInfo {
 pub struct FontBook {
     filter: String,
     font_id: egui::FontId,
+    available_glyphs: BTreeMap<egui::FontFamily, BTreeMap<char, GlyphInfo>>,
     #[cfg(not(target_arch = "wasm32"))]
     font_path: String,
     #[cfg(not(target_arch = "wasm32"))]
     font_load_message: Option<String>,
     #[cfg(not(target_arch = "wasm32"))]
     pending_font_cache_reset: bool,
-    available_glyphs: BTreeMap<egui::FontFamily, BTreeMap<char, GlyphInfo>>,
 }
 
 impl Default for FontBook {
@@ -24,13 +24,13 @@ impl Default for FontBook {
         Self {
             filter: Default::default(),
             font_id: egui::FontId::proportional(18.0),
+            available_glyphs: Default::default(),
             #[cfg(not(target_arch = "wasm32"))]
             font_path: Default::default(),
             #[cfg(not(target_arch = "wasm32"))]
             font_load_message: None,
             #[cfg(not(target_arch = "wasm32"))]
             pending_font_cache_reset: false,
-            available_glyphs: Default::default(),
         }
     }
 }
